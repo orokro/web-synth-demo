@@ -3,10 +3,10 @@
 	-------------
 
 	A user-drawn single-cycle waveform, stored as a list of bezier anchors.
-	The editor (later phases) gives the user full freedom, so the visible curve
-	may fold back on itself; the *audible* wave is the "true profile" — the upper
-	silhouette of the curve at each x. getCycle() computes exactly that, so the
-	red profile line drawn in the editor and the sound are the same thing.
+	The editor gives the user full freedom, so the visible curve may fold back on
+	itself; the *audible* wave is the "true profile" — the upper silhouette of the
+	curve at each x. getCycle() computes exactly that, so the red profile line
+	drawn in the editor and the sound are the same thing.
 
 	Anchor format (all normalized; handles are offsets in anchor-local space):
 		{ x: 0..1, y: -1..1,
@@ -15,6 +15,8 @@
 		  isBroken }               // true once the anchor tool splits the handles
 
 	The first anchor is pinned to x=0 and the last to x=1; neither can be deleted.
+	The endpoints get a single collinear handle by default (first: out, last: in)
+	so the ends are immediately shapeable.
 */
 
 // base
@@ -27,7 +29,7 @@ import { shallowRef } from "vue";
 const FLATTEN_STEPS = 64;
 
 /**
- * Makes a default anchor.
+ * Makes a default anchor with zero-length handles.
  *
  * @param {Number} x - normalized x (0-1)
  * @param {Number} y - normalized y (-1..1)
@@ -35,6 +37,23 @@ const FLATTEN_STEPS = 64;
  */
 function makeAnchor(x, y) {
 	return { x, y, handleInX: 0, handleInY: 0, handleOutX: 0, handleOutY: 0, isBroken: false };
+}
+
+/**
+ * Builds the default two-anchor ramp, with collinear endpoint handles so the
+ * first anchor has a visible out-handle and the last a visible in-handle (the
+ * line stays straight because the controls sit on the chord).
+ *
+ * @returns {Array<Object>}
+ */
+function defaultAnchors() {
+	const left = makeAnchor(0, -1);
+	const right = makeAnchor(1, 1);
+	left.handleOutX = 1 / 3;
+	left.handleOutY = 2 / 3;
+	right.handleInX = -1 / 3;
+	right.handleInY = -2 / 3;
+	return [left, right];
 }
 
 // main export
@@ -52,7 +71,7 @@ export default class CustomWave extends WaveSource {
 
 		const anchors = Array.isArray(opts.anchors) && opts.anchors.length >= 2
 			? opts.anchors.map((a) => ({ ...makeAnchor(a.x, a.y), ...a }))
-			: [makeAnchor(0, -1), makeAnchor(1, 1)];
+			: defaultAnchors();
 
 		// pin endpoints
 		anchors[0].x = 0;
