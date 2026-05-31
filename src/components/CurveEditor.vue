@@ -16,7 +16,9 @@
 	    drag handles (smooth = mirror direction/keep length; broken = independent).
 	  - Pen: click curve to insert (de Casteljau), click+drag insert-and-move,
 	    click point to delete (whole selection if any), drag to move.
-	  The Anchor tool (break / zero / symmetric drag-out) arrives in 3b-2.
+	  - Anchor: drag a handle to break the anchor (handles become independent);
+	    click a handle to zero/remove it; drag an anchor to pull out fresh
+	    symmetric handles (endpoints get just their one valid handle).
 
 	All edits write back to source.anchors so the sound updates live.
 -->
@@ -109,6 +111,15 @@ function sy(wy) {
 
 // reactive anchors
 const anchors = computed(() => props.source.getAnchors());
+
+// short, tool-specific hint
+const toolHint = computed(() => {
+	if (tool.value === "pen")
+		return "Click curve to add · click point to delete · drag to move";
+	if (tool.value === "anchor")
+		return "Drag handle to break · click handle to remove · drag point to pull handles";
+	return "Drag points/handles · shift-click multi · drag empty to box-select";
+});
 
 /**
  * Builds an svg path for a cubic between anchors, optionally x-shifted (ghosts).
@@ -285,6 +296,68 @@ function commit(next) {
 }
 
 /**
+ * Sets a handle offset on an anchor without the smooth-mirror behavior.
+ *
+ * @param {Object} anchor - anchor (mutated)
+ * @param {String} which - "in" or "out"
+ * @param {Number} hx - x offset
+ * @param {Number} hy - y offset
+ * @returns {void}
+ */
+function setHandle(anchor, which, hx, hy) {
+	if (which === "in") {
+		anchor.handleInX = hx;
+		anchor.handleInY = hy;
+	} else {
+		anchor.handleOutX = hx;
+		anchor.handleOutY = hy;
+	}
+}
+
+/**
+ * Zeros one handle and marks the anchor broken (anchor-tool click).
+ *
+ * @param {Object} anchor - anchor (mutated)
+ * @param {String} which - "in" or "out"
+ * @returns {void}
+ */
+function zeroHandle(anchor, which) {
+	anchor.isBroken = true;
+	setHandle(anchor, which, 0, 0);
+}
+
+/**
+ * Pulls fresh symmetric handles out of an anchor (anchor-tool drag). Endpoints
+ * get only their one valid handle (first: out, last: in).
+ *
+ * @param {Object} anchor - anchor (mutated)
+ * @param {Number} index - anchor index
+ * @param {Number} last - last anchor index
+ * @param {Number} dx - drag x offset (anchor-local)
+ * @param {Number} dy - drag y offset (anchor-local)
+ * @returns {void}
+ */
+function applyDragOut(anchor, index, last, dx, dy) {
+	anchor.isBroken = false;
+	if (index === 0) {
+		anchor.handleOutX = dx;
+		anchor.handleOutY = dy;
+		anchor.handleInX = 0;
+		anchor.handleInY = 0;
+	} else if (index === last) {
+		anchor.handleInX = dx;
+		anchor.handleInY = dy;
+		anchor.handleOutX = 0;
+		anchor.handleOutY = 0;
+	} else {
+		anchor.handleOutX = dx;
+		anchor.handleOutY = dy;
+		anchor.handleInX = -dx;
+		anchor.handleInY = -dy;
+	}
+}
+
+/**
  * Toggles an index in the selection.
  *
  * @param {Number} index - anchor index
@@ -323,7 +396,16 @@ function onPointerDown(e) {
 	const base = { startWX: info.wx, startWY: info.wy, startSX: e.clientX, startSY: e.clientY, moved: false };
 
 	if (handle) {
-		drag = { ...base, kind: "handle", index: handle.index, which: handle.which, orig: cloneAnchors(a), anchorX: a[handle.index].x, anchorY: a[handle.index].y };
+		const kind = tool.value === "anchor" ? "anchorHandle" : "handle";
+		drag = { ...base, kind, index: handle.index, which: handle.which, orig: cloneAnchors(a), anchorX: a[handle.index].x, anchorY: a[handle.index].y };
+		return;
+	}
+
+	if (tool.value === "anchor") {
+		if (anchorIdx >= 0)
+			drag = { ...base, kind: "anchorDragOut", index: anchorIdx, orig: cloneAnchors(a), anchorX: a[anchorIdx].x, anchorY: a[anchorIdx].y };
+		else
+			drag = null;
 		return;
 	}
 
@@ -427,11 +509,26 @@ function onPointerMove(e) {
 		const next = cloneAnchors(drag.orig);
 		applyHandleDrag(next[drag.index], drag.which, info.wx - drag.anchorX, info.wy - drag.anchorY);
 		commit(next);
+		return;
+	}
+
+	if (drag.kind === "anchorHandle") {
+		const next = cloneAnchors(drag.orig);
+		next[drag.index].isBroken = true;
+		setHandle(next[drag.index], drag.which, info.wx - drag.anchorX, info.wy - drag.anchorY);
+		commit(next);
+		return;
+	}
+
+	if (drag.kind === "anchorDragOut") {
+		const next = cloneAnchors(drag.orig);
+		applyDragOut(next[drag.index], drag.index, last, info.wx - drag.anchorX, info.wy - drag.anchorY);
+		commit(next);
 	}
 }
 
 /**
- * Pointer-up: finalizes box-select or pen click actions.
+ * Pointer-up: finalizes box-select, pen delete, or anchor-tool handle removal.
  *
  * @param {PointerEvent} e - the event
  * @returns {void}
@@ -444,6 +541,10 @@ function onPointerUp(e) {
 			box.value = null;
 		} else if (drag.kind === "penAnchor" && !drag.moved) {
 			deleteOnPenClick(drag.index);
+		} else if (drag.kind === "anchorHandle" && !drag.moved) {
+			const next = cloneAnchors(drag.orig);
+			zeroHandle(next[drag.index], drag.which);
+			commit(next);
 		}
 		drag = null;
 	}
@@ -571,7 +672,7 @@ onBeforeUnmount(() => {
 			<div class="tools">
 				<button type="button" :class="{ active: tool === 'select' }" @click="tool = 'select'">Select</button>
 				<button type="button" :class="{ active: tool === 'pen' }" @click="tool = 'pen'">Pen</button>
-				<button type="button" class="soon" disabled title="Coming in 3b-2">Anchor</button>
+				<button type="button" :class="{ active: tool === 'anchor' }" @click="tool = 'anchor'">Anchor</button>
 			</div>
 			<div class="tools">
 				<button type="button" @click="viewFit" title="Frame everything (incl. out-of-bounds handles)">Fit</button>
@@ -580,14 +681,14 @@ onBeforeUnmount(() => {
 			<label class="shade-toggle">
 				<input type="checkbox" v-model="showShade" /> Shade
 			</label>
-			<span class="hint">Right-drag pan · wheel zoom</span>
+			<span class="hint">{{ toolHint }} · right-drag pan · wheel zoom</span>
 		</div>
 
 		<div class="canvas-wrap">
 			<svg
 				ref="svgEl"
 				class="canvas"
-				:class="{ 'tool-pen': tool === 'pen' }"
+				:class="{ 'tool-pen': tool === 'pen', 'tool-anchor': tool === 'anchor' }"
 				:viewBox="`0 0 ${vw} ${vh}`"
 				preserveAspectRatio="none"
 				@pointerdown="onPointerDown"
@@ -680,7 +781,6 @@ onBeforeUnmount(() => {
 
 				&:hover:not(:disabled) { background: #34343c; color: #fff; }
 				&.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
-				&.soon { opacity: 0.5; cursor: default; }
 			}
 		}
 
@@ -713,6 +813,7 @@ onBeforeUnmount(() => {
 		touch-action: none;
 
 		&.tool-pen { cursor: crosshair; }
+		&.tool-anchor { cursor: pointer; }
 	}
 
 	.bg { fill: transparent; }
