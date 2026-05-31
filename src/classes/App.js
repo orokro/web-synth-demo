@@ -100,7 +100,7 @@ export default class App {
 		});
 
 		// autosave whenever the serialized project changes (debounced)
-		this.stopAutosave = watch(() => JSON.stringify(this.project.toJSON()), () => this.queueSave());
+		this.stopAutosave = watch(() => JSON.stringify({ project: this.project.toJSON(), synth: this.serializeSynth() }), () => this.queueSave());
 
 		// capture the final state (including layout + pins) on page unload
 		this.onBeforeUnload = () => this.saveSession();
@@ -345,7 +345,21 @@ export default class App {
 
 
 	/**
-	 * Builds a full session object (document + window layout + editor pins).
+	 * Serializes the synth playback settings (engine + sampler params).
+	 *
+	 * @returns {Object}
+	 */
+	serializeSynth() {
+		return {
+			mode: this.synth.mode.value,
+			baseLength: this.synth.baseLength.value,
+			loop: this.synth.loop.value
+		};
+	}
+
+
+	/**
+	 * Builds a full session object (document + window layout + editor pins + synth).
 	 *
 	 * @returns {Object}
 	 */
@@ -368,7 +382,8 @@ export default class App {
 			schemaVersion: SCHEMA_VERSION,
 			project: this.project.toJSON(),
 			layout,
-			editorPins
+			editorPins,
+			synth: this.serializeSynth()
 		};
 	}
 
@@ -431,6 +446,14 @@ export default class App {
 			return;
 		if (data.project)
 			this.project.loadJSON(data.project);
+		if (data.synth) {
+			if (data.synth.mode === "sampler" || data.synth.mode === "oscillator")
+				this.synth.mode.value = data.synth.mode;
+			if (typeof data.synth.baseLength === "number")
+				this.synth.baseLength.value = data.synth.baseLength;
+			if (typeof data.synth.loop === "boolean")
+				this.synth.loop.value = data.synth.loop;
+		}
 		this.pendingLayout = data.layout || null;
 		this.pendingEditorPins = Array.isArray(data.editorPins) ? data.editorPins.slice() : [];
 		this.applyPendingLayout();
