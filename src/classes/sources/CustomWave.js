@@ -137,9 +137,8 @@ export default class CustomWave extends WaveSource {
 	 *
 	 * @returns {Float32Array}
 	 */
-	generate() {
+	generate(n = CYCLE_RESOLUTION) {
 
-		const n = CYCLE_RESOLUTION;
 		const out = new Float32Array(n);
 		const anchors = this.anchors.value;
 		if (!anchors || anchors.length < 2)

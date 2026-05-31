@@ -120,9 +120,8 @@ export default class CombinedWave extends WaveSource {
 	 *
 	 * @returns {Float32Array}
 	 */
-	generate() {
+	generate(n = CYCLE_RESOLUTION) {
 
-		const n = CYCLE_RESOLUTION;
 		const out = new Float32Array(n);
 		const inputs = this.inputs.value;
 		if (!inputs.length || !this.resolve)
@@ -136,7 +135,7 @@ export default class CombinedWave extends WaveSource {
 			if (!src)
 				continue;
 
-			const cyc = src.getCycle();
+			const cyc = this.childSamples(src, n);
 			const freq = inp.frequency || 1;
 			const scale = inp.scale ?? 1;
 

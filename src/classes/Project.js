@@ -20,6 +20,7 @@ import GeneratedWave from "@/classes/sources/GeneratedWave.js";
 import CustomWave from "@/classes/sources/CustomWave.js";
 import CombinedWave from "@/classes/sources/CombinedWave.js";
 import ShapedWave from "@/classes/sources/ShapedWave.js";
+import GradientWave from "@/classes/sources/GradientWave.js";
 
 // bump when the on-disk shape changes incompatibly
 export const SCHEMA_VERSION = 1;
@@ -29,7 +30,8 @@ const SOURCE_TYPES = {
 	generated: GeneratedWave,
 	custom: CustomWave,
 	combined: CombinedWave,
-	shaped: ShapedWave
+	shaped: ShapedWave,
+	gradient: GradientWave
 };
 
 // main export

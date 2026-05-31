@@ -3,9 +3,10 @@
 	---------------
 
 	Synth settings (the play surface is the Instrument window). Hosts the
-	enable-audio gate, the sound-source picker (which wave feeds the synth) with
-	a preview, and the envelope placeholder. Editing the chosen source updates
-	the sound live via the App's reactive binding.
+	enable-audio gate, the sound-source picker (which wave feeds the synth), the
+	playback engine (Oscillator vs Sampler + base length / loop), and the
+	envelope placeholder. Editing the chosen source updates the sound live in
+	Oscillator mode; in Sampler mode edits apply to the next note.
 -->
 <script setup>
 
@@ -40,6 +41,36 @@ function onSoundSourceChange(event) {
 	app.setSoundSource(event.target.value || null);
 }
 
+/**
+ * Sets the playback engine.
+ *
+ * @param {String} mode - "oscillator" or "sampler"
+ * @returns {void}
+ */
+function setMode(mode) {
+	app.synth.setMode(mode);
+}
+
+/**
+ * Sets the sampler base length (seconds).
+ *
+ * @param {Event} event - number input event
+ * @returns {void}
+ */
+function onBaseLength(event) {
+	app.synth.setBaseLength(parseFloat(event.target.value));
+}
+
+/**
+ * Toggles sampler looping.
+ *
+ * @param {Event} event - checkbox event
+ * @returns {void}
+ */
+function onLoop(event) {
+	app.synth.setLoop(event.target.checked);
+}
+
 </script>
 <template>
 
@@ -61,6 +92,27 @@ function onSoundSourceChange(event) {
 					<WavePreview v-if="soundSource" :samples="soundSource.getCycle()" />
 					<span v-else class="none">No source selected</span>
 				</div>
+			</div>
+
+			<div class="field">
+				<span class="field-label">Engine</span>
+				<div class="engine-toggle">
+					<button type="button" :class="{ on: app.synth.mode.value === 'oscillator' }" @click="setMode('oscillator')">Oscillator</button>
+					<button type="button" :class="{ on: app.synth.mode.value === 'sampler' }" @click="setMode('sampler')">Sampler</button>
+				</div>
+
+				<template v-if="app.synth.mode.value === 'sampler'">
+					<div class="sampler-row">
+						<label>Base length (s)
+							<input type="number" min="0.02" max="4" step="0.01" :value="app.synth.baseLength.value" @input="onBaseLength" />
+						</label>
+						<label class="loop">
+							<input type="checkbox" :checked="app.synth.loop.value" @change="onLoop" /> Loop
+						</label>
+					</div>
+					<p class="sampler-note">Plays the wave as a one-shot of this length, pitched per key (base = C4). Edits apply to the next note.</p>
+				</template>
+				<p v-else class="sampler-note">Repeats one cycle at the note pitch; edits update held notes live.</p>
 			</div>
 
 			<div class="field">
@@ -88,12 +140,7 @@ function onSoundSourceChange(event) {
 		overflow: auto;
 	}
 
-	.bar {
-		display: flex;
-		align-items: center;
-		gap: 16px;
-		flex: 0 0 auto;
-	}
+	.bar { display: flex; align-items: center; gap: 16px; flex: 0 0 auto; }
 
 	.enable {
 		padding: 7px 14px;
@@ -111,6 +158,7 @@ function onSoundSourceChange(event) {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 12px;
+		align-items: flex-start;
 
 		.field {
 			flex: 1 1 220px;
@@ -147,11 +195,52 @@ function onSoundSourceChange(event) {
 			display: flex;
 			align-items: center;
 			justify-content: center;
-
 			.none { font-size: 12px; color: #666; }
 		}
 
 		.field-body { font-size: 13px; color: #bbb; }
 	}
+
+	.engine-toggle {
+		display: flex;
+		gap: 4px;
+
+		button {
+			flex: 1 1 0;
+			padding: 6px 0;
+			font-size: 12px;
+			border: 1px solid #444;
+			border-radius: 4px;
+			background: #2a2a30;
+			color: #ccc;
+			cursor: pointer;
+			&:hover { background: #34343c; }
+			&.on { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
+		}
+	}
+
+	.sampler-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 8px;
+		flex-wrap: wrap;
+
+		label { font-size: 11px; color: #999; display: flex; align-items: center; gap: 6px; }
+
+		input[type="number"] {
+			width: 64px;
+			background: #26262c;
+			color: #ddd;
+			border: 1px solid #444;
+			border-radius: 4px;
+			padding: 3px 5px;
+			font-size: 12px;
+		}
+
+		.loop input { accent-color: var(--accent); }
+	}
+
+	.sampler-note { margin: 6px 0 0; font-size: 11px; color: #666; }
 
 </style>

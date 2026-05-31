@@ -117,16 +117,15 @@ export default class ShapedWave extends WaveSource {
 	 *
 	 * @returns {Float32Array}
 	 */
-	generate() {
+	generate(n = CYCLE_RESOLUTION) {
 
-		const n = CYCLE_RESOLUTION;
 		const h = new Float64Array(n);
 
 		// base height field
 		const input = this.input.value;
 		const src = input && this.resolve ? this.resolve(input.sourceId) : null;
 		if (src) {
-			const cyc = src.getCycle();
+			const cyc = this.childSamples(src, n);
 			const freq = input.frequency || 1;
 			for (let i = 0; i < n; i++) {
 				let phase = (i / n) * freq % 1;

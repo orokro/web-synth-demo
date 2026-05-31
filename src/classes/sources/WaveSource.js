@@ -59,8 +59,8 @@ export default class WaveSource {
 	 *
 	 * @returns {Float32Array} length CYCLE_RESOLUTION, values in [-1, 1]
 	 */
-	generate() {
-		return new Float32Array(CYCLE_RESOLUTION);
+	generate(n = CYCLE_RESOLUTION) {
+		return new Float32Array(n);
 	}
 
 
@@ -71,6 +71,32 @@ export default class WaveSource {
 	 */
 	getCycle() {
 		return this.cycle.value;
+	}
+
+
+	/**
+	 * Renders the wave at an arbitrary resolution (for sampler-mode buffers).
+	 * Not cached — call once per render; getCycle() stays the cached 2048-sample
+	 * version used by the oscillator, previews and graph wiring.
+	 *
+	 * @param {Number} n - sample count
+	 * @returns {Float32Array}
+	 */
+	render(n) {
+		return this.generate(n);
+	}
+
+
+	/**
+	 * Samples a child source at resolution n: the cached cycle at the default
+	 * resolution (reactive), else a fresh high-res render.
+	 *
+	 * @param {WaveSource} src - child source
+	 * @param {Number} n - sample count
+	 * @returns {Float32Array}
+	 */
+	childSamples(src, n) {
+		return n === CYCLE_RESOLUTION ? src.getCycle() : src.render(n);
 	}
 
 

@@ -2,18 +2,18 @@
 	Synth.js
 	--------
 
-	Audio output. Plays whatever single-cycle wave it is given as a band-limited
-	PeriodicWave through a small polyphonic voice pool, each voice an
-	OscillatorNode -> GainNode (ADSR) -> master gain -> destination.
+	Audio output with two playback engines for the same wave data:
 
-	We use tone.js to own/unlock the audio context (so the target app's Tone
-	graph slots in later) but build the voices on its raw context with native
-	createPeriodicWave, so the exact designed waveform — harmonic phase and all
-	— is what sounds. The wave can be hot-swapped on already-sounding voices, so
-	tweaking a source updates the held note live.
+	- Oscillator mode: the source's single cycle drives an OscillatorNode via a
+	  band-limited PeriodicWave, repeated at the note pitch (live-tweakable, the
+	  wave hot-swaps on held voices).
+	- Sampler mode: the source is rendered at high resolution into an AudioBuffer
+	  of `baseLength` seconds and played one-shot (optionally looped), pitched by
+	  playback rate relative to a base note — i.e. "play this wave like a sample"
+	  (music-box style). Edits apply to the next note (a playing buffer can't swap).
 
-	Gate-driven: noteOn triggers attack/decay to a held sustain; noteOff
-	triggers release. The release time is never needed in advance.
+	Each voice is NODE -> GainNode (ADSR) -> master gain -> destination. Built on
+	tone.js's context so the target app's Tone graph slots in later.
 */
 
 // tone
@@ -22,11 +22,27 @@ import * as Tone from "tone";
 // vue
 import { ref, shallowRef } from "vue";
 
-// time-domain cycle -> cosine/sine coefficients
+// time-domain cycle -> cosine/sine coefficients (oscillator path)
 import { samplesToCoefficients } from "./periodicWave.js";
 
-// fixed ADSR for Phase 2; the custom-envelope work in Phase 7 replaces this
+// fixed ADSR for now; the custom-envelope work in Phase 7 replaces this
 const ENV = { attack: 0.01, decay: 0.12, sustain: 0.6, release: 0.25 };
+
+// midi note at which a sampler buffer plays at its natural rate
+const SAMPLER_BASE_NOTE = 60;
+
+// cap the rendered sampler buffer length (seconds) to bound memory/CPU
+const MAX_SAMPLE_SECONDS = 4;
+
+/**
+ * Midi note -> frequency (Hz).
+ *
+ * @param {Number} midiNote - midi note number
+ * @returns {Number}
+ */
+function midiToFreq(midiNote) {
+	return 440 * Math.pow(2, (midiNote - 69) / 12);
+}
 
 // main export
 export default class Synth {
@@ -42,22 +58,29 @@ export default class Synth {
 		// midi note numbers currently sounding, for UI highlighting
 		this.activeNotes = shallowRef(new Set());
 
+		// playback engine + sampler settings (reactive so the UI + binding react)
+		this.mode = ref("oscillator");
+		this.baseLength = ref(1.0);
+		this.loop = ref(false);
+
 		// raw audio context + master gain, created in start()
 		this.ctx = null;
 		this.master = null;
 
-		// the current band-limited wave, and the raw samples it came from
-		this.periodicWave = null;
+		// the sound source + its cached cycle (oscillator) and rendered buffer (sampler)
+		this.soundSource = null;
 		this.samples = null;
+		this.periodicWave = null;
+		this.sampleBuffer = null;
 
-		// midiNote -> { osc, gain }
+		// midiNote -> { node, gain, isOsc }
 		this.voices = new Map();
 	}
 
 
 	/**
-	 * Resumes the audio context and builds the master gain. Must be called from
-	 * a user gesture. Safe to call repeatedly.
+	 * Resumes the audio context and builds the master gain. Must be called from a
+	 * user gesture. Safe to call repeatedly.
 	 *
 	 * @returns {Promise<void>}
 	 */
@@ -73,32 +96,81 @@ export default class Synth {
 		this.master.gain.value = 0.8;
 		this.master.connect(this.ctx.destination);
 
-		// build the wave now if a source already handed us samples
-		if (this.samples)
-			this.rebuildWave();
-
 		this.isStarted.value = true;
+		this.rebuildCurrent();
 	}
 
 
 	/**
-	 * Sets the wave to play from one cycle of samples. Rebuilds the band-limited
-	 * PeriodicWave and hot-swaps it onto any currently-held voices.
+	 * Sets the sound source and its current cycle, then rebuilds whatever the
+	 * active mode needs. Called reactively by the App when the source or its
+	 * parameters change.
 	 *
-	 * @param {Float32Array} samples - one normalized cycle (power-of-two length)
+	 * @param {Object} source - the WaveSource feeding the synth
+	 * @param {Float32Array} cycleSamples - the source's cached single cycle
 	 * @returns {void}
 	 */
-	setWaveFromSamples(samples) {
-
-		this.samples = samples;
-
+	setSoundSource(source, cycleSamples) {
+		this.soundSource = source;
+		this.samples = cycleSamples;
 		if (this.isStarted.value)
+			this.rebuildCurrent();
+	}
+
+
+	/**
+	 * Sets the playback engine.
+	 *
+	 * @param {String} mode - "oscillator" or "sampler"
+	 * @returns {void}
+	 */
+	setMode(mode) {
+		this.mode.value = mode === "sampler" ? "sampler" : "oscillator";
+		if (this.isStarted.value)
+			this.rebuildCurrent();
+	}
+
+
+	/**
+	 * Sets the sampler base length in seconds (clamped).
+	 *
+	 * @param {Number} seconds - base length
+	 * @returns {void}
+	 */
+	setBaseLength(seconds) {
+		this.baseLength.value = Math.min(MAX_SAMPLE_SECONDS, Math.max(0.02, seconds || 0.02));
+		if (this.isStarted.value && this.mode.value === "sampler")
+			this.rebuildBuffer();
+	}
+
+
+	/**
+	 * Sets sampler looping.
+	 *
+	 * @param {Boolean} on - whether to loop
+	 * @returns {void}
+	 */
+	setLoop(on) {
+		this.loop.value = !!on;
+	}
+
+
+	/**
+	 * Rebuilds whatever the current mode plays from.
+	 *
+	 * @returns {void}
+	 */
+	rebuildCurrent() {
+		if (this.mode.value === "sampler")
+			this.rebuildBuffer();
+		else
 			this.rebuildWave();
 	}
 
 
 	/**
-	 * Rebuilds this.periodicWave from this.samples and applies it to held voices.
+	 * Rebuilds the oscillator PeriodicWave from the cached cycle and hot-swaps it
+	 * onto held oscillator voices.
 	 *
 	 * @returns {void}
 	 */
@@ -110,12 +182,35 @@ export default class Synth {
 		const { real, imag } = samplesToCoefficients(this.samples);
 		this.periodicWave = this.ctx.createPeriodicWave(real, imag, { disableNormalization: false });
 
-		this.voices.forEach((voice) => voice.osc.setPeriodicWave(this.periodicWave));
+		this.voices.forEach((voice) => {
+			if (voice.isOsc)
+				voice.node.setPeriodicWave(this.periodicWave);
+		});
 	}
 
 
 	/**
-	 * Begins a note (attack -> decay -> hold at sustain).
+	 * Renders the sound source at high resolution into the sampler AudioBuffer.
+	 *
+	 * @returns {void}
+	 */
+	rebuildBuffer() {
+
+		if (!this.ctx || !this.soundSource)
+			return;
+
+		const rate = this.ctx.sampleRate;
+		const n = Math.max(1, Math.min(MAX_SAMPLE_SECONDS * rate, Math.round(this.baseLength.value * rate)));
+		const data = this.soundSource.render(n);
+
+		const buffer = this.ctx.createBuffer(1, n, rate);
+		buffer.getChannelData(0).set(data);
+		this.sampleBuffer = buffer;
+	}
+
+
+	/**
+	 * Begins a note in the active engine (attack -> decay -> hold at sustain).
 	 *
 	 * @param {Number} midiNote - midi note number (0-127)
 	 * @param {Number} [velocity=0.8] - normalized velocity (0-1)
@@ -125,31 +220,42 @@ export default class Synth {
 
 		if (!this.isStarted.value || !this.ctx)
 			return;
-
 		if (this.voices.has(midiNote))
 			return;
 
 		const now = this.ctx.currentTime;
-		const osc = this.ctx.createOscillator();
 		const gain = this.ctx.createGain();
+		const useSampler = this.mode.value === "sampler" && this.sampleBuffer;
 
-		if (this.periodicWave)
-			osc.setPeriodicWave(this.periodicWave);
-		else
-			osc.type = "sine";
-
-		osc.frequency.value = 440 * Math.pow(2, (midiNote - 69) / 12);
+		let node;
+		if (useSampler) {
+			node = this.ctx.createBufferSource();
+			node.buffer = this.sampleBuffer;
+			node.loop = this.loop.value;
+			node.playbackRate.value = Math.pow(2, (midiNote - SAMPLER_BASE_NOTE) / 12);
+		} else {
+			node = this.ctx.createOscillator();
+			if (this.periodicWave)
+				node.setPeriodicWave(this.periodicWave);
+			else
+				node.type = "sine";
+			node.frequency.value = midiToFreq(midiNote);
+		}
 
 		const peak = Math.max(0.0001, velocity);
 		gain.gain.setValueAtTime(0, now);
 		gain.gain.linearRampToValueAtTime(peak, now + ENV.attack);
 		gain.gain.linearRampToValueAtTime(peak * ENV.sustain, now + ENV.attack + ENV.decay);
 
-		osc.connect(gain);
+		node.connect(gain);
 		gain.connect(this.master);
-		osc.start(now);
+		node.start(now);
 
-		this.voices.set(midiNote, { osc, gain });
+		const voice = { node, gain, isOsc: !useSampler };
+		this.voices.set(midiNote, voice);
+
+		// natural end (a non-looping sampler one-shot) cleans itself up
+		node.onended = () => this.finishVoice(midiNote, voice);
 
 		const next = new Set(this.activeNotes.value);
 		next.add(midiNote);
@@ -176,17 +282,36 @@ export default class Synth {
 		g.setValueAtTime(g.value, now);
 		g.linearRampToValueAtTime(0, now + ENV.release);
 
-		voice.osc.stop(now + ENV.release + 0.02);
-		voice.osc.onended = () => {
-			voice.osc.disconnect();
+		try {
+			voice.node.stop(now + ENV.release + 0.02);
+		} catch (err) {
+			// already stopped (e.g. a one-shot that finished) — fine
+		}
+	}
+
+
+	/**
+	 * Disconnects and forgets a voice (from natural end or after release).
+	 *
+	 * @param {Number} midiNote - midi note number
+	 * @param {Object} voice - the voice record
+	 * @returns {void}
+	 */
+	finishVoice(midiNote, voice) {
+
+		try {
+			voice.node.disconnect();
 			voice.gain.disconnect();
-		};
+		} catch (err) {
+			// already disconnected
+		}
 
-		this.voices.delete(midiNote);
-
-		const next = new Set(this.activeNotes.value);
-		next.delete(midiNote);
-		this.activeNotes.value = next;
+		if (this.voices.get(midiNote) === voice) {
+			this.voices.delete(midiNote);
+			const next = new Set(this.activeNotes.value);
+			next.delete(midiNote);
+			this.activeNotes.value = next;
+		}
 	}
 
 
@@ -196,7 +321,6 @@ export default class Synth {
 	 * @returns {void}
 	 */
 	releaseAll() {
-
 		Array.from(this.voices.keys()).forEach((note) => this.noteOff(note));
 		this.activeNotes.value = new Set();
 	}

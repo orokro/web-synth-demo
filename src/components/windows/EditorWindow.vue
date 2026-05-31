@@ -25,6 +25,7 @@ import WavePreview from "@/components/WavePreview.vue";
 import CurveEditor from "@/components/CurveEditor.vue";
 import CombinerEditor from "@/components/CombinerEditor.vue";
 import ShaperEditor from "@/components/ShaperEditor.vue";
+import GradientEditor from "@/components/GradientEditor.vue";
 
 // generated waveform names
 import { WAVEFORMS } from "@/classes/sources/GeneratedWave.js";
@@ -212,6 +213,8 @@ onBeforeUnmount(() => app.unregisterEditor(uid));
 				<CombinerEditor v-if="boundSource.type === 'combined'" :source="boundSource" />
 
 				<ShaperEditor v-if="boundSource.type === 'shaped'" :source="boundSource" />
+
+				<GradientEditor v-if="boundSource.type === 'gradient'" :source="boundSource" />
 
 				<button class="sound-btn" type="button" :class="{ active: isSoundSource }" @click="useAsSoundSource">
 					{{ isSoundSource ? "Feeding the synth" : "Use as sound source" }}

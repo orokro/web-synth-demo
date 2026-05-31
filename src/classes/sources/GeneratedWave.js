@@ -41,9 +41,8 @@ export default class GeneratedWave extends WaveSource {
 	 *
 	 * @returns {Float32Array}
 	 */
-	generate() {
+	generate(n = CYCLE_RESOLUTION) {
 
-		const n = CYCLE_RESOLUTION;
 		const out = new Float32Array(n);
 		const waveform = this.waveform.value;
 		const pulseWidth = this.pulseWidth.value;

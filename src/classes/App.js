@@ -87,8 +87,16 @@ export default class App {
 		// keep the synth's wave in sync with the sound source's cycle
 		this.stopSynthBinding = watchEffect(() => {
 			const source = this.getSource(this.soundSourceId.value);
-			if (source)
-				this.synth.setWaveFromSamples(source.getCycle());
+			// track engine + base length so mode/length changes re-bind
+			const mode = this.synth.mode.value;
+			const baseLength = this.synth.baseLength.value;
+			void mode;
+			void baseLength;
+			if (!source)
+				return;
+			// read the cycle so any upstream edit re-runs this effect
+			const cycle = source.getCycle();
+			this.synth.setSoundSource(source, cycle);
 		});
 
 		// autosave whenever the serialized project changes (debounced)

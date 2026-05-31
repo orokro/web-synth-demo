@@ -51,7 +51,8 @@ const ADD_TYPES = [
 	{ type: "generated", label: "Generated" },
 	{ type: "custom", label: "Custom" },
 	{ type: "combined", label: "Combined" },
-	{ type: "shaped", label: "Shaped" }
+	{ type: "shaped", label: "Shaped" },
+	{ type: "gradient", label: "Gradient" }
 ];
 
 /**
