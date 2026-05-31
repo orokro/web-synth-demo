@@ -19,6 +19,7 @@ import { ref, shallowRef } from "vue";
 import GeneratedWave from "@/classes/sources/GeneratedWave.js";
 import CustomWave from "@/classes/sources/CustomWave.js";
 import CombinedWave from "@/classes/sources/CombinedWave.js";
+import ShapedWave from "@/classes/sources/ShapedWave.js";
 
 // bump when the on-disk shape changes incompatibly
 export const SCHEMA_VERSION = 1;
@@ -27,7 +28,8 @@ export const SCHEMA_VERSION = 1;
 const SOURCE_TYPES = {
 	generated: GeneratedWave,
 	custom: CustomWave,
-	combined: CombinedWave
+	combined: CombinedWave,
+	shaped: ShapedWave
 };
 
 // main export

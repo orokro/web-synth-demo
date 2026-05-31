@@ -50,7 +50,8 @@ const fileInput = ref(null);
 const ADD_TYPES = [
 	{ type: "generated", label: "Generated" },
 	{ type: "custom", label: "Custom" },
-	{ type: "combined", label: "Combined" }
+	{ type: "combined", label: "Combined" },
+	{ type: "shaped", label: "Shaped" }
 ];
 
 /**
