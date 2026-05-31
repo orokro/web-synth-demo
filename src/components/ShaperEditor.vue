@@ -177,6 +177,58 @@ function rotateHandleScreen(shape) {
 	return { x: mx, y: my - ROTATE_OFFSET };
 }
 
+// quad edges: verts = the two corner indices on the edge; opp = the opposite edge's corners
+const QUAD_EDGES = [
+	{ verts: [0, 1], opp: [3, 2] },
+	{ verts: [1, 2], opp: [0, 3] },
+	{ verts: [2, 3], opp: [1, 0] },
+	{ verts: [3, 0], opp: [2, 1] }
+];
+
+/**
+ * Wave-space midpoint of two quad corners.
+ *
+ * @param {Array<{x:Number,y:Number}>} quad - corners
+ * @param {Array<Number>} idx - two corner indices
+ * @returns {{x:Number,y:Number}}
+ */
+function midOf(quad, idx) {
+	return { x: (quad[idx[0]].x + quad[idx[1]].x) / 2, y: (quad[idx[0]].y + quad[idx[1]].y) / 2 };
+}
+
+/**
+ * Screen midpoint of an edge.
+ *
+ * @param {Array<{x:Number,y:Number}>} quad - corners
+ * @param {Number} e - edge index 0..3
+ * @returns {{x:Number,y:Number}}
+ */
+function edgeMidScreen(quad, e) {
+	const v = QUAD_EDGES[e].verts;
+	return { x: (sx(quad[v[0]].x) + sx(quad[v[1]].x)) / 2, y: (sy(quad[v[0]].y) + sy(quad[v[1]].y)) / 2 };
+}
+
+/**
+ * Uniformly scales the quad about an anchor so the moving reference point
+ * follows the pointer along the anchor->reference axis (aspect-locked).
+ *
+ * @param {Array<{x:Number,y:Number}>} orig - original quad
+ * @param {{x:Number,y:Number}} anchor - fixed point
+ * @param {{x:Number,y:Number}} reference - point that should track the pointer
+ * @param {{wx:Number,wy:Number}} info - pointer in wave space
+ * @returns {Array<{x:Number,y:Number}>}
+ */
+function scaleQuadToPointer(orig, anchor, reference, info) {
+	const dx = reference.x - anchor.x;
+	const dy = reference.y - anchor.y;
+	const len = Math.hypot(dx, dy) || 1e-6;
+	const ax = dx / len;
+	const ay = dy / len;
+	const proj = (info.wx - anchor.x) * ax + (info.wy - anchor.y) * ay;
+	const scale = Math.max(0.02, proj / len);
+	return orig.map((p) => ({ x: anchor.x + (p.x - anchor.x) * scale, y: anchor.y + (p.y - anchor.y) * scale }));
+}
+
 /**
  * Point-in-polygon test (wave space).
  *
@@ -311,7 +363,15 @@ function onPointerDown(e) {
 		// corner handle?
 		for (let i = 0; i < 4; i++) {
 			if (Math.hypot(sx(sel.quad[i].x) - info.px, sy(sel.quad[i].y) - info.py) < HANDLE_HIT) {
-				drag = { kind: "corner", id: sel.id, cornerIndex: i };
+				drag = { kind: "corner", id: sel.id, cornerIndex: i, orig: sel.quad.map((p) => ({ ...p })), startWX: info.wx, startWY: info.wy };
+				return;
+			}
+		}
+		// edge handle?
+		for (let e = 0; e < 4; e++) {
+			const m = edgeMidScreen(sel.quad, e);
+			if (Math.hypot(m.x - info.px, m.y - info.py) < HANDLE_HIT) {
+				drag = { kind: "edge", id: sel.id, edgeIndex: e, orig: sel.quad.map((p) => ({ ...p })), startWX: info.wx, startWY: info.wy };
 				return;
 			}
 		}
@@ -362,12 +422,29 @@ function onPointerMove(e) {
 	}
 
 	if (drag.kind === "corner") {
-		const s = selectedShape.value;
-		if (!s)
-			return;
-		const quad = s.quad.map((p) => ({ ...p }));
-		quad[drag.cornerIndex] = { x: info.wx, y: info.wy };
-		setQuad(drag.id, quad);
+		if (e.shiftKey) {
+			const quad = drag.orig.map((p) => ({ ...p }));
+			quad[drag.cornerIndex] = { x: info.wx, y: info.wy };
+			setQuad(drag.id, quad);
+		} else {
+			const anchor = drag.orig[(drag.cornerIndex + 2) % 4];
+			setQuad(drag.id, scaleQuadToPointer(drag.orig, anchor, drag.orig[drag.cornerIndex], info));
+		}
+		return;
+	}
+
+	if (drag.kind === "edge") {
+		const ed = QUAD_EDGES[drag.edgeIndex];
+		if (e.shiftKey) {
+			const dwx = info.wx - drag.startWX;
+			const dwy = info.wy - drag.startWY;
+			const quad = drag.orig.map((p) => ({ ...p }));
+			for (const v of ed.verts)
+				quad[v] = { x: drag.orig[v].x + dwx, y: drag.orig[v].y + dwy };
+			setQuad(drag.id, quad);
+		} else {
+			setQuad(drag.id, scaleQuadToPointer(drag.orig, midOf(drag.orig, ed.opp), midOf(drag.orig, ed.verts), info));
+		}
 		return;
 	}
 
@@ -546,6 +623,7 @@ onBeforeUnmount(() => {
 					/>
 					<circle :cx="rotateHandleScreen(selectedShape).x" :cy="rotateHandleScreen(selectedShape).y" r="6" class="rot-handle" />
 					<circle v-for="(c, i) in selectedShape.quad" :key="i" :cx="sx(c.x)" :cy="sy(c.y)" r="6" class="corner" />
+					<rect v-for="e in 4" :key="'e' + e" :x="edgeMidScreen(selectedShape.quad, e - 1).x - 4" :y="edgeMidScreen(selectedShape.quad, e - 1).y - 4" width="8" height="8" class="edge-handle" />
 				</g>
 			</svg>
 		</div>
@@ -660,7 +738,7 @@ onBeforeUnmount(() => {
 	.canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: default; }
 
 	.bg { fill: transparent; }
-	.axis, .boundary, .shade, .base-line, .profile, .ghost, .shape, .rot-line, .rot-handle, .corner { pointer-events: none; }
+	.axis, .boundary, .shade, .base-line, .profile, .ghost, .shape, .rot-line, .rot-handle, .corner, .edge-handle { pointer-events: none; }
 
 	.axis { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; }
 	.boundary { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
@@ -680,5 +758,6 @@ onBeforeUnmount(() => {
 	.rot-line { stroke: #9a9a9a; stroke-width: 1; }
 	.rot-handle { fill: #2a2a30; stroke: var(--accent); stroke-width: 2; }
 	.corner { fill: #fff; stroke: var(--accent); stroke-width: 2; }
+	.edge-handle { fill: #2a2a30; stroke: var(--accent); stroke-width: 2; }
 
 </style>
