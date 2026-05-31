@@ -84,6 +84,7 @@ function onMidiChange(event) {
 		padding: 12px;
 		background: #17171a;
 		color: #ddd;
+		border: 2px solid #696969;
 		box-sizing: border-box;
 	}
 

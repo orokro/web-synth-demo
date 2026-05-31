@@ -117,6 +117,8 @@ watch(() => app.sources.value, (list) => {
 		flex-direction: column;
 		background: #0f0f11;
 		color: #ddd;
+		border: 2px solid #696969;
+		box-sizing: border-box;
 	}
 
 	.bar {

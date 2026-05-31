@@ -82,6 +82,8 @@ function remove(id, event) {
 		flex-direction: column;
 		background: #1e1e22;
 		color: #ddd;
+		border: 2px solid #696969;
+		box-sizing: border-box;
 	}
 
 	.header {
