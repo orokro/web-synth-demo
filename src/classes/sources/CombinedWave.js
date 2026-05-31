@@ -5,8 +5,11 @@
 	Stacks/blends other sources into one wave. Each input references a source by
 	id and carries its own frequency (how many times that source repeats across
 	the cycle), scale (amplitude before blending) and blend mode. The first input
-	is the base; later inputs blend onto the accumulator with their mode. The
-	result is clamped to [-1, 1].
+	is the base; later inputs blend onto the accumulator with their mode.
+
+	Output handling: with normalize off, the result is hard-clipped to [-1, 1];
+	with normalize on, if the peak exceeds 1 the whole curve is scaled down to
+	fit (preserving shape), so you can stack freely without clipping.
 
 	Inputs are references, so editing a referenced source updates this wave live.
 	The Project prevents reference cycles before they are created.
@@ -16,7 +19,7 @@
 import WaveSource, { CYCLE_RESOLUTION } from "./WaveSource.js";
 
 // vue
-import { shallowRef } from "vue";
+import { shallowRef, ref } from "vue";
 
 // supported blend modes (the first input ignores its mode and acts as the base)
 export const BLEND_MODES = ["add", "subtract", "multiply", "divide", "max", "min"];
@@ -64,10 +67,12 @@ export default class CombinedWave extends WaveSource {
 	 * @param {String} [opts.id]
 	 * @param {String} [opts.name="Combined"]
 	 * @param {Array<Object>} [opts.inputs] - input descriptors
+	 * @param {Boolean} [opts.normalize=false] - scale-to-fit instead of clipping
 	 */
 	constructor(opts = {}) {
 		super({ id: opts.id, name: opts.name ?? "Combined", type: "combined" });
 		this.inputs = shallowRef((opts.inputs || []).map(normalizeInput));
+		this.normalize = ref(opts.normalize ?? false);
 	}
 
 
@@ -87,6 +92,17 @@ export default class CombinedWave extends WaveSource {
 	 */
 	setInputs(inputs) {
 		this.inputs.value = inputs.map(normalizeInput);
+	}
+
+
+	/**
+	 * Toggles scale-to-fit normalization.
+	 *
+	 * @param {Boolean} on - whether to normalize
+	 * @returns {void}
+	 */
+	setNormalize(on) {
+		this.normalize.value = !!on;
 	}
 
 
@@ -125,7 +141,6 @@ export default class CombinedWave extends WaveSource {
 			const scale = inp.scale ?? 1;
 
 			for (let i = 0; i < n; i++) {
-				// sample the source at the (repeated) phase, linearly interpolated
 				let phase = (i / n) * freq % 1;
 				if (phase < 0)
 					phase += 1;
@@ -141,9 +156,25 @@ export default class CombinedWave extends WaveSource {
 			started = true;
 		}
 
-		for (let i = 0; i < n; i++) {
-			const x = out[i];
-			out[i] = x < -1 ? -1 : x > 1 ? 1 : x;
+		if (this.normalize.value) {
+			// scale-to-fit: only attenuate if we overshoot, keeping the shape
+			let peak = 0;
+			for (let i = 0; i < n; i++) {
+				const m = Math.abs(out[i]);
+				if (m > peak)
+					peak = m;
+			}
+			if (peak > 1) {
+				const inv = 1 / peak;
+				for (let i = 0; i < n; i++)
+					out[i] *= inv;
+			}
+		} else {
+			// hard clip
+			for (let i = 0; i < n; i++) {
+				const x = out[i];
+				out[i] = x < -1 ? -1 : x > 1 ? 1 : x;
+			}
 		}
 
 		return out;
@@ -156,7 +187,8 @@ export default class CombinedWave extends WaveSource {
 	toJSON() {
 		return {
 			...super.toJSON(),
-			inputs: this.inputs.value.map((i) => ({ ...i }))
+			inputs: this.inputs.value.map((i) => ({ ...i })),
+			normalize: this.normalize.value
 		};
 	}
 

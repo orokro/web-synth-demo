@@ -3,21 +3,25 @@
 	------------------
 
 	Editor for a CombinedWave: a stack of input sources, each with its own
-	frequency, amplitude (scale) and blend mode. The first input is the base;
-	later inputs blend onto it. Inputs reference other sources by id, so editing
-	a referenced source updates this one live. The add-input list is filtered so
-	you can only pick sources that won't create a reference cycle.
+	frequency (jog wheel), amplitude scale (exp knob) and blend mode (matrix of
+	radio buttons). The first input is the base; later inputs blend onto it. Rows
+	reorder by dragging the grip handle. An auto-normalize toggle scales the
+	output to fit instead of clipping.
 
-	The combined output preview is the EditorWindow's wave preview above; this
-	component manages the input list.
+	Inputs reference other sources by id, so editing a referenced source updates
+	this one live. The add-input list is filtered so picking a source can't
+	create a reference cycle.
 -->
 <script setup>
 
 // vue
-import { inject, computed } from "vue";
+import { inject, computed, ref } from "vue";
 
 // components
 import WavePreview from "@/components/WavePreview.vue";
+import JogWheel from "@/components/widgets/JogWheel.vue";
+import Knob from "@/components/widgets/Knob.vue";
+import BlendMatrix from "@/components/widgets/BlendMatrix.vue";
 
 // blend modes
 import { BLEND_MODES } from "@/classes/sources/CombinedWave.js";
@@ -35,6 +39,10 @@ const inputs = computed(() => props.source.getInputs());
 
 // sources that can be added without creating a cycle (also excludes self)
 const available = computed(() => app.sources.value.filter((s) => app.canReference(props.source.id, s.id)));
+
+// drag-reorder state
+let dragIndex = -1;
+const overIndex = ref(-1);
 
 /**
  * Adds an input referencing the given source.
@@ -70,24 +78,6 @@ function removeInput(index) {
 }
 
 /**
- * Moves an input up or down.
- *
- * @param {Number} index - input index
- * @param {Number} dir - -1 up, +1 down
- * @returns {void}
- */
-function moveInput(index, dir) {
-	const arr = inputs.value.slice();
-	const j = index + dir;
-	if (j < 0 || j >= arr.length)
-		return;
-	const tmp = arr[index];
-	arr[index] = arr[j];
-	arr[j] = tmp;
-	props.source.setInputs(arr);
-}
-
-/**
  * Patches one field of an input.
  *
  * @param {Number} index - input index
@@ -109,6 +99,70 @@ function inputSource(input) {
 	return app.getSource(input.sourceId);
 }
 
+/**
+ * Toggles auto-normalize.
+ *
+ * @param {Event} event - checkbox change
+ * @returns {void}
+ */
+function onNormalizeChange(event) {
+	props.source.setNormalize(event.target.checked);
+}
+
+/**
+ * Begins a row drag-reorder.
+ *
+ * @param {Number} index - input index
+ * @param {DragEvent} event - dragstart
+ * @returns {void}
+ */
+function onDragStart(index, event) {
+	dragIndex = index;
+	event.dataTransfer.effectAllowed = "move";
+	try {
+		event.dataTransfer.setData("text/plain", String(index));
+	} catch (err) {
+		// some browsers are picky; the index is tracked locally anyway
+	}
+}
+
+/**
+ * Marks the row currently hovered during a drag.
+ *
+ * @param {Number} index - input index
+ * @returns {void}
+ */
+function onDragOver(index) {
+	if (overIndex.value !== index)
+		overIndex.value = index;
+}
+
+/**
+ * Drops the dragged row at the given index.
+ *
+ * @param {Number} index - target index
+ * @returns {void}
+ */
+function onDrop(index) {
+	if (dragIndex >= 0 && dragIndex !== index) {
+		const arr = inputs.value.slice();
+		const [moved] = arr.splice(dragIndex, 1);
+		arr.splice(index, 0, moved);
+		props.source.setInputs(arr);
+	}
+	resetDrag();
+}
+
+/**
+ * Clears drag-reorder state.
+ *
+ * @returns {void}
+ */
+function resetDrag() {
+	dragIndex = -1;
+	overIndex.value = -1;
+}
+
 </script>
 <template>
 
@@ -118,17 +172,28 @@ function inputSource(input) {
 				<option value="">+ Add input…</option>
 				<option v-for="s in available" :key="s.id" :value="s.id">{{ s.name.value }}</option>
 			</select>
-			<span class="hint">First input is the base; others blend onto it. Scale to avoid clipping.</span>
+
+			<label class="norm-toggle">
+				<input type="checkbox" :checked="source.normalize.value" @change="onNormalizeChange" />
+				Auto-normalize
+			</label>
+
+			<span class="hint">First input is the base; others blend onto it.</span>
 		</div>
 
 		<div class="inputs">
 			<p v-if="inputs.length === 0" class="empty">No inputs yet — add one above.</p>
 
-			<div v-for="(inp, i) in inputs" :key="i" class="input-row">
-				<div class="reorder">
-					<button type="button" :disabled="i === 0" title="Move up" @click="moveInput(i, -1)">▲</button>
-					<button type="button" :disabled="i === inputs.length - 1" title="Move down" @click="moveInput(i, 1)">▼</button>
-				</div>
+			<div
+				v-for="(inp, i) in inputs"
+				:key="i"
+				class="input-row"
+				:class="{ over: overIndex === i }"
+				@dragover.prevent="onDragOver(i)"
+				@drop="onDrop(i)"
+				@dragend="resetDrag"
+			>
+				<span class="grip material-symbols-outlined" draggable="true" title="Drag to reorder" @dragstart="onDragStart(i, $event)">drag_indicator</span>
 
 				<span class="thumb">
 					<WavePreview v-if="inputSource(inp)" :samples="inputSource(inp).getCycle()" />
@@ -137,19 +202,47 @@ function inputSource(input) {
 
 				<div class="meta">
 					<span class="name">{{ inputSource(inp) ? inputSource(inp).name.value : "(deleted source)" }}</span>
+
 					<div class="params">
-						<label>freq
-							<input type="number" min="1" max="32" step="1" :value="inp.frequency" @input="updateInput(i, 'frequency', Math.max(1, parseInt($event.target.value) || 1))" />
-						</label>
-						<label>scale
-							<input type="number" min="-2" max="2" step="0.05" :value="inp.scale" @input="updateInput(i, 'scale', parseFloat($event.target.value))" />
-						</label>
-						<label v-if="i > 0">blend
-							<select :value="inp.blendMode" @change="updateInput(i, 'blendMode', $event.target.value)">
-								<option v-for="m in BLEND_MODES" :key="m" :value="m">{{ m }}</option>
-							</select>
-						</label>
-						<span v-else class="base-tag">base</span>
+						<div class="param">
+							<span class="plabel">freq</span>
+							<input
+								type="number"
+								min="1"
+								max="32"
+								step="1"
+								:value="inp.frequency"
+								@input="updateInput(i, 'frequency', Math.max(1, parseInt($event.target.value) || 1))"
+							/>
+							<JogWheel
+								:model-value="inp.frequency"
+								:min="1"
+								:max="32"
+								:step="1"
+								@update:model-value="updateInput(i, 'frequency', $event)"
+							/>
+						</div>
+
+						<div class="param">
+							<span class="plabel">scale</span>
+							<Knob
+								:model-value="inp.scale"
+								:min="0"
+								:max="4"
+								:curve="2.5"
+								@update:model-value="updateInput(i, 'scale', $event)"
+							/>
+						</div>
+
+						<div class="param blend">
+							<BlendMatrix
+								v-if="i > 0"
+								:model-value="inp.blendMode"
+								:options="BLEND_MODES"
+								@update:model-value="updateInput(i, 'blendMode', $event)"
+							/>
+							<span v-else class="base-tag">base</span>
+						</div>
 					</div>
 				</div>
 
@@ -172,7 +265,7 @@ function inputSource(input) {
 	.toolbar {
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 14px;
 		flex-wrap: wrap;
 
 		.add-input {
@@ -181,6 +274,16 @@ function inputSource(input) {
 			border: 1px solid #444;
 			border-radius: 4px;
 			padding: 5px 8px;
+		}
+
+		.norm-toggle {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			font-size: 12px;
+			color: #bbb;
+			cursor: pointer;
+			input { accent-color: var(--accent); }
 		}
 
 		.hint { font-size: 11px; color: #666; }
@@ -193,11 +296,7 @@ function inputSource(input) {
 		overflow-y: auto;
 	}
 
-	.empty {
-		font-size: 12px;
-		color: #777;
-		margin: 4px 0;
-	}
+	.empty { font-size: 12px; color: #777; margin: 4px 0; }
 
 	.input-row {
 		display: flex;
@@ -208,25 +307,17 @@ function inputSource(input) {
 		border: 1px solid #2c2c32;
 		border-radius: 6px;
 
-		.reorder {
-			display: flex;
-			flex-direction: column;
-			gap: 2px;
+		&.over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-border) inset; }
 
-			button {
-				width: 20px;
-				height: 16px;
-				font-size: 9px;
-				line-height: 1;
-				border: 1px solid #444;
-				border-radius: 3px;
-				background: #2a2a30;
-				color: #bbb;
-				cursor: pointer;
+		.grip {
+			flex: 0 0 auto;
+			font-size: 18px;
+			color: #777;
+			cursor: grab;
+			user-select: none;
 
-				&:disabled { opacity: 0.3; cursor: default; }
-				&:hover:not(:disabled) { background: #34343c; }
-			}
+			&:active { cursor: grabbing; }
+			&:hover { color: #bbb; }
 		}
 
 		.thumb {
@@ -249,7 +340,7 @@ function inputSource(input) {
 			min-width: 0;
 			display: flex;
 			flex-direction: column;
-			gap: 6px;
+			gap: 8px;
 
 			.name {
 				font-size: 13px;
@@ -260,28 +351,34 @@ function inputSource(input) {
 
 			.params {
 				display: flex;
-				align-items: center;
-				gap: 10px;
+				align-items: flex-start;
+				gap: 16px;
 				flex-wrap: wrap;
+			}
 
-				label {
-					display: flex;
-					align-items: center;
-					gap: 4px;
+			.param {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+
+				.plabel {
 					font-size: 11px;
 					color: #999;
-
-					input, select {
-						background: #26262c;
-						color: #ddd;
-						border: 1px solid #444;
-						border-radius: 4px;
-						padding: 3px 5px;
-						font-size: 12px;
-					}
-
-					input[type="number"] { width: 56px; }
+					text-transform: uppercase;
+					letter-spacing: 0.05em;
 				}
+
+				input[type="number"] {
+					width: 50px;
+					background: #26262c;
+					color: #ddd;
+					border: 1px solid #444;
+					border-radius: 4px;
+					padding: 3px 5px;
+					font-size: 12px;
+				}
+
+				&.blend { align-items: center; }
 
 				.base-tag {
 					font-size: 10px;
@@ -294,6 +391,7 @@ function inputSource(input) {
 
 		.del {
 			flex: 0 0 auto;
+			align-self: flex-start;
 			width: 22px;
 			height: 22px;
 			border: none;
