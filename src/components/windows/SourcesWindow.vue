@@ -2,16 +2,16 @@
 	SourcesWindow.vue
 	-----------------
 
-	Window listing the project's wave sources, with controls to add, select and
-	remove them, plus a live waveform thumbnail per source. A dot marks the
-	source currently feeding the synth. A small toolbar handles New / Import /
-	Export of the whole session. Reads shared App state so multiple Sources
-	windows stay in sync. Fills its parent frame and scrolls internally.
+	Window listing the project's wave sources, with controls to add (choosing a
+	type), select and remove them, plus a live waveform thumbnail per source. A
+	dot marks the source currently feeding the synth. A small toolbar handles
+	New / Import / Export of the whole session. Reads shared App state so
+	multiple Sources windows stay in sync. Fills its parent frame and scrolls.
 -->
 <script setup>
 
 // vue
-import { inject, ref } from "vue";
+import { inject, ref, onMounted, onBeforeUnmount } from "vue";
 
 // components
 import WavePreview from "@/components/WavePreview.vue";
@@ -19,16 +19,48 @@ import WavePreview from "@/components/WavePreview.vue";
 // shared app state
 const app = inject("app");
 
+// add-type menu state + element (for click-outside)
+const showMenu = ref(false);
+const addWrap = ref(null);
+
 // hidden file input for import
 const fileInput = ref(null);
 
+// addable source types
+const ADD_TYPES = [
+	{ type: "generated", label: "Generated" },
+	{ type: "custom", label: "Custom" }
+];
+
 /**
- * Adds a new source.
+ * Toggles the add-type menu.
  *
  * @returns {void}
  */
-function addSource() {
-	app.addSource();
+function toggleMenu() {
+	showMenu.value = !showMenu.value;
+}
+
+/**
+ * Adds a source of the given type and closes the menu.
+ *
+ * @param {String} type - source kind slug
+ * @returns {void}
+ */
+function addType(type) {
+	app.addSource(type);
+	showMenu.value = false;
+}
+
+/**
+ * Closes the add menu when clicking outside it.
+ *
+ * @param {Event} event - document click event
+ * @returns {void}
+ */
+function onDocClick(event) {
+	if (showMenu.value && addWrap.value && !addWrap.value.contains(event.target))
+		showMenu.value = false;
 }
 
 /**
@@ -95,13 +127,21 @@ function onImportChange(event) {
 	event.target.value = "";
 }
 
+onMounted(() => document.addEventListener("click", onDocClick));
+onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
+
 </script>
 <template>
 
 	<div class="sources-window">
 		<header class="header">
 			<h2>Sources</h2>
-			<button class="add" type="button" title="Add source" @click="addSource">+</button>
+			<div ref="addWrap" class="add-wrap">
+				<button class="add" type="button" title="Add source" @click="toggleMenu">+</button>
+				<div v-if="showMenu" class="add-menu">
+					<button v-for="t in ADD_TYPES" :key="t.type" type="button" @click="addType(t.type)">{{ t.label }}</button>
+				</div>
+			</div>
 		</header>
 
 		<div class="toolbar">
@@ -167,6 +207,10 @@ function onImportChange(event) {
 			letter-spacing: 0.08em;
 			color: #aaa;
 		}
+	}
+
+	.add-wrap {
+		position: relative;
 
 		.add {
 			width: 24px;
@@ -181,6 +225,36 @@ function onImportChange(event) {
 
 			&:hover {
 				background: #34343c;
+			}
+		}
+
+		.add-menu {
+			position: absolute;
+			top: 28px;
+			right: 0;
+			z-index: 10;
+			display: flex;
+			flex-direction: column;
+			min-width: 120px;
+			background: #26262c;
+			border: 1px solid #444;
+			border-radius: 5px;
+			overflow: hidden;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+
+			button {
+				padding: 8px 12px;
+				border: none;
+				background: transparent;
+				color: #ddd;
+				text-align: left;
+				cursor: pointer;
+				font-size: 13px;
+
+				&:hover {
+					background: var(--accent-dim);
+					color: var(--accent);
+				}
 			}
 		}
 	}

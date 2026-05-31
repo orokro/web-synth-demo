@@ -17,13 +17,15 @@ import { ref, shallowRef } from "vue";
 
 // wave sources
 import GeneratedWave from "@/classes/sources/GeneratedWave.js";
+import CustomWave from "@/classes/sources/CustomWave.js";
 
 // bump when the on-disk shape changes incompatibly
 export const SCHEMA_VERSION = 1;
 
 // type slug -> source class (must expose static fromJSON)
 const SOURCE_TYPES = {
-	generated: GeneratedWave
+	generated: GeneratedWave,
+	custom: CustomWave
 };
 
 // main export

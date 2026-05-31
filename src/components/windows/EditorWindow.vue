@@ -12,9 +12,8 @@
 	when frameCtx is stale after an undock) to the App. After a reload the App
 	re-pins each editor by matching the closest saved center.
 
-	For Phase 2 the generated-wave controls (waveform + pulse width) are live and
-	feed the same FFT -> PeriodicWave pipeline as everything else; richer per-type
-	editors arrive in later phases.
+	Per-type editor bodies: generated waves get waveform/pulse controls; custom
+	waves get the CurveEditor. Richer editors for other types arrive later.
 -->
 <script setup>
 
@@ -23,6 +22,7 @@ import { inject, computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 
 // components
 import WavePreview from "@/components/WavePreview.vue";
+import CurveEditor from "@/components/CurveEditor.vue";
 
 // generated waveform names
 import { WAVEFORMS } from "@/classes/sources/GeneratedWave.js";
@@ -186,7 +186,9 @@ onBeforeUnmount(() => app.unregisterEditor(uid));
 		<div class="body">
 			<template v-if="boundSource">
 
-				<div class="preview"><WavePreview :samples="boundSource.getCycle()" /></div>
+				<div v-if="boundSource.type !== 'custom'" class="preview">
+					<WavePreview :samples="boundSource.getCycle()" />
+				</div>
 
 				<div v-if="boundSource.type === 'generated'" class="controls">
 					<label class="row">
@@ -202,6 +204,8 @@ onBeforeUnmount(() => app.unregisterEditor(uid));
 						<span class="val">{{ boundSource.pulseWidth.value.toFixed(2) }}</span>
 					</label>
 				</div>
+
+				<CurveEditor v-if="boundSource.type === 'custom'" :source="boundSource" />
 
 				<button class="sound-btn" type="button" :class="{ active: isSoundSource }" @click="useAsSoundSource">
 					{{ isSoundSource ? "Feeding the synth" : "Use as sound source" }}

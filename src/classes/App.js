@@ -156,8 +156,8 @@ export default class App {
 	 *
 	 * @returns {Object} the created source
 	 */
-	addSource() {
-		return this.project.addSource();
+	addSource(type) {
+		return this.project.addSource(type);
 	}
 
 
