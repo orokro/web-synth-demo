@@ -2,102 +2,129 @@
 	App.vue
 	-------
 
-	Root layout and wiring for the demo. A left source column sits beside a
-	right split of editor (top) and synth (bottom). Owns the Synth and the
-	input sources (midi + computer keyboard) and funnels every note event from
-	all input methods into the synth.
+	Root component. Instantiates the shared App state, provides it for injection
+	into every window, and mounts the vue-win-mgr WindowManager with the set of
+	available windows and a default layout (Sources sidebar, Editor main, Synth
+	and Instrument across the bottom). The window manager handles splitting,
+	tabbing, floating and resizing from there.
 -->
 <script setup>
 
 // vue
-import { onMounted, onBeforeUnmount } from "vue";
+import { onMounted, onBeforeUnmount, provide, ref } from "vue";
 
-// app logic
-import Synth from "@/audio/Synth.js";
-import MidiInput from "@/input/MidiInput.js";
-import ComputerKeyboard from "@/input/ComputerKeyboard.js";
+// window manager library
+import { WindowManager, FRAME_STYLE } from "vue-win-mgr";
+import "vue-win-mgr/dist/style.css";
 
-// components
-import SourceList from "@/components/SourceList.vue";
-import SynthView from "@/components/SynthView.vue";
+// shared app state
+import App from "@/classes/App.js";
 
-const synth = new Synth();
-const midi = new MidiInput({ onNoteOn: handleNoteOn, onNoteOff: handleNoteOff });
-const computerKeys = new ComputerKeyboard({ onNoteOn: handleNoteOn, onNoteOff: handleNoteOff });
+// window components
+import SourcesWindow from "@/components/windows/SourcesWindow.vue";
+import EditorWindow from "@/components/windows/EditorWindow.vue";
+import SynthWindow from "@/components/windows/SynthWindow.vue";
+import InstrumentWindow from "@/components/windows/InstrumentWindow.vue";
+
+// the one shared application state instance
+const app = new App();
+provide("app", app);
+
+// ref to the window manager element, for its JS context
+const windowManagerEl = ref(null);
+
+// windows the manager is allowed to host
+const availableWindows = [
+	{ window: SourcesWindow, title: "Sources", slug: "sources" },
+	{ window: EditorWindow, title: "Editor", slug: "editor" },
+	{ window: SynthWindow, title: "Synth", slug: "synth" },
+	{ window: InstrumentWindow, title: "Instrument", slug: "instrument" }
+];
+
+// default layout, authored in a 1920x1080 reference space
+const layout = [
+	{
+		name: "window",
+		top: 0,
+		left: 0,
+		bottom: 1080,
+		right: 1920
+	},
+	{
+		name: "sources",
+		windows: ["sources"],
+		style: FRAME_STYLE.TABBED,
+		left: 0,
+		right: 280,
+		top: 0,
+		bottom: ["ref", "window.bottom"]
+	},
+	{
+		name: "editor",
+		windows: ["editor"],
+		style: FRAME_STYLE.TABBED,
+		left: ["ref", "sources.right"],
+		right: ["ref", "window.right"],
+		top: 0,
+		bottom: ["ref", "window.bottom-340"]
+	},
+	{
+		name: "synth",
+		windows: ["synth"],
+		style: FRAME_STYLE.TABBED,
+		left: ["ref", "sources.right"],
+		right: ["ref", "sources.right+560"],
+		top: ["ref", "editor.bottom"],
+		bottom: ["ref", "window.bottom"]
+	},
+	{
+		name: "instrument",
+		windows: ["instrument"],
+		style: FRAME_STYLE.TABBED,
+		left: ["ref", "synth.right"],
+		right: ["ref", "window.right"],
+		top: ["ref", "editor.bottom"],
+		bottom: ["ref", "window.bottom"]
+	}
+];
 
 /**
- * Routes a note-on from any input source to the synth.
+ * Disables the browser context menu (unless Shift is held, for debugging).
  *
- * @param {Number} note - midi note number
- * @param {Number} velocity - normalized velocity (0-1)
+ * @param {Event} event - the contextmenu event
  * @returns {void}
  */
-function handleNoteOn(note, velocity) {
-	synth.noteOn(note, velocity);
+function disableContextMenu(event) {
+	if (event.shiftKey === false)
+		event.preventDefault();
 }
 
-/**
- * Routes a note-off from any input source to the synth.
- *
- * @param {Number} note - midi note number
- * @returns {void}
- */
-function handleNoteOff(note) {
-	synth.noteOff(note);
-}
-
-/**
- * Enables audio from a user gesture and requests midi access. The piano and
- * computer keyboard also resume audio implicitly, but the button gives a
- * reliable gesture for midi (whose events are not user gestures themselves).
- *
- * @returns {Promise<void>}
- */
-async function enableAudio() {
-	await synth.start();
-	await midi.requestAccess();
-}
-
-/**
- * Selects a midi input device by id.
- *
- * @param {String|null} id - device id, or null for none
- * @returns {void}
- */
-function selectMidi(id) {
-	midi.select(id);
-}
-
-onMounted(() => computerKeys.attach());
+onMounted(() => {
+	app.attachComputerKeyboard();
+	app.setWindowManagerContext(windowManagerEl.value?.getContext?.() ?? null);
+	window.synthApp = app;
+});
 
 onBeforeUnmount(() => {
-	computerKeys.detach();
-	midi.dispose();
-	synth.releaseAll();
+	app.dispose();
 });
 
 </script>
 <template>
 
-	<div class="app">
-		<SourceList class="col-sources" />
-
-		<div class="col-main">
-			<div class="editor-pane">
-				<p class="placeholder">Editor — select or add a source (Phase 2+)</p>
-			</div>
-
-			<SynthView
-				class="synth-pane"
-				:synth="synth"
-				:midi="midi"
-				@enable-audio="enableAudio"
-				@select-midi="selectMidi"
-				@note-on="handleNoteOn"
-				@note-off="handleNoteOff"
-			/>
-		</div>
-	</div>
+	<main class="app-root" @contextmenu="disableContextMenu">
+		<WindowManager
+			ref="windowManagerEl"
+			:availableWindows="availableWindows"
+			:defaultLayout="layout"
+			:showTopBar="false"
+			:showStatusBar="false"
+			:splitMergeHandles="true"
+			:theme="{
+				frameTabsActiveColor: 'rgb(105,105,105)'
+			}"
+		/>
+	</main>
 
 </template>
 <style>
@@ -116,33 +143,10 @@ onBeforeUnmount(() => {
 </style>
 <style lang="scss" scoped>
 
-	.app {
-		display: grid;
-		grid-template-columns: 240px 1fr;
-		height: 100%;
-	}
-
-	.col-main {
-		display: grid;
-		grid-template-rows: 1fr 360px;
-		min-width: 0;
-	}
-
-	.editor-pane {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: #0f0f11;
-		border-bottom: 1px solid #000;
-
-		.placeholder {
-			color: #555;
-			font-size: 14px;
-		}
-	}
-
-	.synth-pane {
-		min-height: 0;
+	.app-root {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
 	}
 
 </style>
