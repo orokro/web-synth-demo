@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "bezier-js": "^6.1.4",
     "fft.js": "^4.0.4",
     "sass": "^1.100.0",
     "tone": "^15.1.22",
