@@ -52,7 +52,8 @@ const ADD_TYPES = [
 	{ type: "custom", label: "Custom" },
 	{ type: "combined", label: "Combined" },
 	{ type: "shaped", label: "Shaped" },
-	{ type: "gradient", label: "Gradient" }
+	{ type: "gradient", label: "Gradient" },
+	{ type: "sampled", label: "Sample" }
 ];
 
 /**

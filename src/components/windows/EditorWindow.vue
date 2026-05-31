@@ -26,6 +26,7 @@ import CurveEditor from "@/components/CurveEditor.vue";
 import CombinerEditor from "@/components/CombinerEditor.vue";
 import ShaperEditor from "@/components/ShaperEditor.vue";
 import GradientEditor from "@/components/GradientEditor.vue";
+import SampledEditor from "@/components/SampledEditor.vue";
 
 // generated waveform names
 import { WAVEFORMS } from "@/classes/sources/GeneratedWave.js";
@@ -189,7 +190,7 @@ onBeforeUnmount(() => app.unregisterEditor(uid));
 		<div class="body">
 			<template v-if="boundSource">
 
-				<div v-if="boundSource.type !== 'custom'" class="preview">
+				<div v-if="boundSource.type !== 'custom' && boundSource.type !== 'sampled'" class="preview">
 					<WavePreview :samples="boundSource.getCycle()" />
 				</div>
 
@@ -215,6 +216,8 @@ onBeforeUnmount(() => app.unregisterEditor(uid));
 				<ShaperEditor v-if="boundSource.type === 'shaped'" :source="boundSource" />
 
 				<GradientEditor v-if="boundSource.type === 'gradient'" :source="boundSource" />
+
+				<SampledEditor v-if="boundSource.type === 'sampled'" :source="boundSource" />
 
 				<button class="sound-btn" type="button" :class="{ active: isSoundSource }" @click="useAsSoundSource">
 					{{ isSoundSource ? "Feeding the synth" : "Use as sound source" }}

@@ -21,6 +21,7 @@ import CustomWave from "@/classes/sources/CustomWave.js";
 import CombinedWave from "@/classes/sources/CombinedWave.js";
 import ShapedWave from "@/classes/sources/ShapedWave.js";
 import GradientWave from "@/classes/sources/GradientWave.js";
+import SampledWave from "@/classes/sources/SampledWave.js";
 
 // bump when the on-disk shape changes incompatibly
 export const SCHEMA_VERSION = 1;
@@ -31,7 +32,8 @@ const SOURCE_TYPES = {
 	custom: CustomWave,
 	combined: CombinedWave,
 	shaped: ShapedWave,
-	gradient: GradientWave
+	gradient: GradientWave,
+	sampled: SampledWave
 };
 
 // main export
