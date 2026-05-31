@@ -7,6 +7,9 @@
 	available windows and a default layout (Sources sidebar, Editor main, Synth
 	and Instrument across the bottom). The window manager handles splitting,
 	tabbing, floating and resizing from there.
+
+	Global styles here also define the app accent palette as CSS variables and a
+	box-sizing reset so borders never push children past their containers.
 -->
 <script setup>
 
@@ -129,7 +132,21 @@ onBeforeUnmount(() => {
 </template>
 <style>
 
-	/* base reset (global, intentionally not scoped) */
+	/* box-sizing reset so borders never overflow their containers */
+	*, *::before, *::after {
+		box-sizing: border-box;
+	}
+
+	/* app accent palette */
+	:root {
+		--accent: #00ABAE;
+		--accent-bright: #1fd0d3;
+		--accent-dark: #007a7c;
+		--accent-dim: rgba(0, 171, 174, 0.18);
+		--accent-border: rgba(0, 171, 174, 0.55);
+		--accent-on: #04302f;
+	}
+
 	html, body, #app {
 		height: 100%;
 		margin: 0;

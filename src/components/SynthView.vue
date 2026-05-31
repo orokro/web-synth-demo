@@ -118,15 +118,15 @@ function onMidiChange(event) {
 		padding: 7px 14px;
 		border: none;
 		border-radius: 5px;
-		background: #6cc4ff;
-		color: #06263a;
+		background: var(--accent);
+		color: var(--accent-on);
 		font-weight: 600;
 		cursor: pointer;
 	}
 
 	.enabled {
 		font-size: 12px;
-		color: #6cc4ff;
+		color: var(--accent);
 	}
 
 	.midi {

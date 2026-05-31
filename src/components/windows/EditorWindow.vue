@@ -2,24 +2,26 @@
 	EditorWindow.vue
 	----------------
 
-	Window that hosts the editor for a wave source. By default it follows the
-	app's current selection, so it always shows whatever source is selected.
+	Hosts the editor for a wave source. By default it follows the app's current
+	selection; the pin toggle locks it to one source so several editors can edit
+	several sources at once. A pinned editor auto-unpins if its source is removed.
 
-	It can also be PINNED to a specific source via the pin toggle: while pinned
-	it ignores the selection and keeps editing its own source, which lets the
-	user open several editor windows and work on several sources at once. If a
-	pinned source is removed, the editor automatically unpins and reverts to
-	following the selection.
-
-	The real per-type editors (bezier, combiner, etc.) arrive in later phases;
-	for now the body is a placeholder that reports which source it is bound to.
+	For Phase 2 the generated-wave controls (waveform + pulse width) are live and
+	feed the same FFT -> PeriodicWave pipeline as everything else; richer per-type
+	editors arrive in later phases.
 -->
 <script setup>
 
 // vue
 import { inject, computed, ref, watch } from "vue";
 
-// shared app state, plus the per-window context (for the title)
+// components
+import WavePreview from "@/components/WavePreview.vue";
+
+// generated waveform names
+import { WAVEFORMS } from "@/classes/sources/GeneratedWave.js";
+
+// shared app state + per-window context (for the tab title)
 const app = inject("app");
 const windowCtx = inject("windowCtx", null);
 
@@ -27,13 +29,15 @@ const windowCtx = inject("windowCtx", null);
 const pinned = ref(false);
 const pinnedId = ref(null);
 
-// which source this editor is currently bound to
+// the source this editor is bound to
 const boundId = computed(() => (pinned.value ? pinnedId.value : app.selectedSourceId.value));
 const boundSource = computed(() => app.getSource(boundId.value));
 
+// whether the bound source is the one feeding the synth
+const isSoundSource = computed(() => boundId.value !== null && boundId.value === app.soundSourceId.value);
+
 /**
- * Toggles the pin. Pinning locks the editor to the source it is currently
- * showing; unpinning returns it to following the selection.
+ * Toggles the pin between "follow selection" and "locked to this source".
  *
  * @returns {void}
  */
@@ -45,22 +49,53 @@ function togglePin() {
 		return;
 	}
 
-	// only pin if there is actually a source to pin to
 	if (boundId.value !== null) {
 		pinnedId.value = boundId.value;
 		pinned.value = true;
 	}
 }
 
-// keep the window's tab title in sync with the bound source
+/**
+ * Changes the generated waveform.
+ *
+ * @param {Event} event - select change event
+ * @returns {void}
+ */
+function setWaveform(event) {
+	if (boundSource.value)
+		boundSource.value.waveform.value = event.target.value;
+}
+
+/**
+ * Changes the pulse width.
+ *
+ * @param {Event} event - range input event
+ * @returns {void}
+ */
+function setPulseWidth(event) {
+	if (boundSource.value)
+		boundSource.value.pulseWidth.value = parseFloat(event.target.value);
+}
+
+/**
+ * Makes the bound source the synth's sound source.
+ *
+ * @returns {void}
+ */
+function useAsSoundSource() {
+	if (boundId.value !== null)
+		app.setSoundSource(boundId.value);
+}
+
+// keep the tab title in sync with the bound source
 watch(boundSource, (source) => {
 	if (windowCtx && typeof windowCtx.setTitle === "function")
-		windowCtx.setTitle(source ? `Editor — ${source.name}` : "Editor");
+		windowCtx.setTitle(source ? `Editor — ${source.name.value}` : "Editor");
 }, { immediate: true });
 
-// if a pinned source disappears, unpin and fall back to the selection
+// unpin if the pinned source disappears
 watch(() => app.sources.value, (list) => {
-	if (pinned.value && !list.some(s => s.id === pinnedId.value)) {
+	if (pinned.value && !list.some((s) => s.id === pinnedId.value)) {
 		pinned.value = false;
 		pinnedId.value = null;
 	}
@@ -72,7 +107,7 @@ watch(() => app.sources.value, (list) => {
 	<div class="editor-window">
 
 		<header class="bar">
-			<span class="title">{{ boundSource ? boundSource.name : "No source" }}</span>
+			<span class="title">{{ boundSource ? boundSource.name.value : "No source" }}</span>
 			<span v-if="boundSource" class="type">{{ boundSource.type }}</span>
 
 			<button
@@ -84,24 +119,37 @@ watch(() => app.sources.value, (list) => {
 				@click="togglePin"
 			>
 				<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-					<path
-						fill="currentColor"
-						d="M14 4v5l2 3v2h-4v5l-1 1-1-1v-5H6v-2l2-3V4H7V2h8v2h-1z"
-					/>
+					<path fill="currentColor" d="M14 4v5l2 3v2h-4v5l-1 1-1-1v-5H6v-2l2-3V4H7V2h8v2h-1z" />
 				</svg>
 			</button>
 		</header>
 
 		<div class="body">
 			<template v-if="boundSource">
-				<p class="headline">Editor for <strong>{{ boundSource.name }}</strong></p>
-				<p class="detail">Type: {{ boundSource.type }}</p>
-				<p class="note">
-					The {{ boundSource.type }} editor arrives in a later phase.
-					<template v-if="pinned">This window is pinned to this source.</template>
-					<template v-else>This window follows the current selection.</template>
-				</p>
+
+				<div class="preview"><WavePreview :samples="boundSource.getCycle()" /></div>
+
+				<div v-if="boundSource.type === 'generated'" class="controls">
+					<label class="row">
+						<span class="lbl">Waveform</span>
+						<select :value="boundSource.waveform.value" @change="setWaveform">
+							<option v-for="w in WAVEFORMS" :key="w" :value="w">{{ w }}</option>
+						</select>
+					</label>
+
+					<label v-if="boundSource.waveform.value === 'pulse'" class="row">
+						<span class="lbl">Pulse width</span>
+						<input type="range" min="0.05" max="0.95" step="0.01" :value="boundSource.pulseWidth.value" @input="setPulseWidth" />
+						<span class="val">{{ boundSource.pulseWidth.value.toFixed(2) }}</span>
+					</label>
+				</div>
+
+				<button class="sound-btn" type="button" :class="{ active: isSoundSource }" @click="useAsSoundSource">
+					{{ isSoundSource ? "Feeding the synth" : "Use as sound source" }}
+				</button>
+
 			</template>
+
 			<p v-else class="empty">Select or add a source to edit it.</p>
 		</div>
 
@@ -130,16 +178,8 @@ watch(() => app.sources.value, (list) => {
 		background: #17171a;
 		flex: 0 0 auto;
 
-		.title {
-			font-size: 13px;
-			font-weight: 600;
-		}
-
-		.type {
-			font-size: 10px;
-			text-transform: uppercase;
-			color: #888;
-		}
+		.title { font-size: 13px; font-weight: 600; }
+		.type { font-size: 10px; text-transform: uppercase; color: #888; }
 
 		.pin {
 			margin-left: auto;
@@ -154,20 +194,9 @@ watch(() => app.sources.value, (list) => {
 			color: #999;
 			cursor: pointer;
 
-			&:hover:not(:disabled) {
-				color: #ddd;
-			}
-
-			&.active {
-				background: #2f4a5c;
-				color: #6cc4ff;
-				border-color: #3a6c86;
-			}
-
-			&:disabled {
-				opacity: 0.4;
-				cursor: default;
-			}
+			&:hover:not(:disabled) { color: #ddd; }
+			&.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
+			&:disabled { opacity: 0.4; cursor: default; }
 		}
 	}
 
@@ -176,28 +205,61 @@ watch(() => app.sources.value, (list) => {
 		overflow: auto;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 6px;
-		padding: 16px;
-		text-align: center;
+		gap: 16px;
+		padding: 20px;
 
-		.headline {
-			font-size: 15px;
+		.preview {
+			width: 100%;
+			height: 160px;
+			background: #0a0a0c;
+			border: 1px solid #2c2c32;
+			border-radius: 6px;
 		}
 
-		.detail {
-			font-size: 12px;
-			color: #aaa;
+		.controls {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+
+			.row {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+
+				.lbl {
+					width: 90px;
+					font-size: 12px;
+					color: #aaa;
+				}
+
+				select, input[type="range"] {
+					background: #26262c;
+					color: #ddd;
+					border: 1px solid #444;
+					border-radius: 4px;
+					padding: 4px 6px;
+				}
+
+				input[type="range"] { flex: 1 1 auto; accent-color: var(--accent); }
+				.val { font-size: 12px; color: #888; width: 36px; text-align: right; }
+			}
 		}
 
-		.note {
-			font-size: 12px;
-			color: #777;
-			max-width: 320px;
+		.sound-btn {
+			align-self: flex-start;
+			padding: 7px 12px;
+			border: 1px solid #444;
+			border-radius: 5px;
+			background: #26262c;
+			color: #ddd;
+			cursor: pointer;
+
+			&:hover { background: #34343c; }
+			&.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); cursor: default; }
 		}
 
 		.empty {
+			margin: auto;
 			color: #555;
 			font-size: 14px;
 		}

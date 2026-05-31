@@ -3,24 +3,28 @@
 	-----------------
 
 	Window listing the project's wave sources, with controls to add, select and
-	remove them. Reads the shared App state, so multiple Sources windows stay in
-	sync. Fills its parent frame and scrolls internally.
+	remove them, plus a live waveform thumbnail per source. A dot marks the
+	source currently feeding the synth. Reads shared App state so multiple
+	Sources windows stay in sync. Fills its parent frame and scrolls internally.
 -->
 <script setup>
 
 // vue
 import { inject } from "vue";
 
+// components
+import WavePreview from "@/components/WavePreview.vue";
+
 // shared app state
 const app = inject("app");
 
 /**
- * Adds a new placeholder source.
+ * Adds a new source.
  *
  * @returns {void}
  */
 function addSource() {
-	app.addSource("generated");
+	app.addSource();
 }
 
 /**
@@ -34,7 +38,7 @@ function select(id) {
 }
 
 /**
- * Removes a source without letting the click also select it.
+ * Removes a source without also selecting it.
  *
  * @param {String} id - source id
  * @param {Event} event - the click event
@@ -64,9 +68,19 @@ function remove(id, event) {
 				:class="{ selected: source.id === app.selectedSourceId.value }"
 				@click="select(source.id)"
 			>
-				<span class="thumb">{{ source.type.charAt(0).toUpperCase() }}</span>
-				<span class="name">{{ source.name }}</span>
-				<span class="type">{{ source.type }}</span>
+				<span class="thumb"><WavePreview :samples="source.getCycle()" /></span>
+
+				<span class="info">
+					<span class="name">{{ source.name.value }}</span>
+					<span class="type">{{ source.type }}</span>
+				</span>
+
+				<span
+					v-if="source.id === app.soundSourceId.value"
+					class="sound-dot"
+					title="Feeding the synth"
+				></span>
+
 				<button class="del" type="button" title="Remove" @click="remove(source.id, $event)">×</button>
 			</div>
 		</div>
@@ -144,36 +158,46 @@ function remove(id, event) {
 		}
 
 		&.selected {
-			background: #2f4a5c;
+			background: var(--accent-dim);
 		}
 
 		.thumb {
 			flex: 0 0 auto;
-			width: 26px;
-			height: 26px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
+			width: 46px;
+			height: 28px;
 			background: #111;
 			border: 1px solid #3a3a42;
 			border-radius: 4px;
-			font-size: 12px;
-			color: #6cc4ff;
-		}
-
-		.name {
-			flex: 1 1 auto;
-			font-size: 13px;
-			white-space: nowrap;
 			overflow: hidden;
-			text-overflow: ellipsis;
 		}
 
-		.type {
+		.info {
+			flex: 1 1 auto;
+			min-width: 0;
+			display: flex;
+			flex-direction: column;
+
+			.name {
+				font-size: 13px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.type {
+				font-size: 10px;
+				color: #888;
+				text-transform: uppercase;
+			}
+		}
+
+		.sound-dot {
 			flex: 0 0 auto;
-			font-size: 10px;
-			color: #888;
-			text-transform: uppercase;
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: var(--accent);
+			box-shadow: 0 0 4px var(--accent);
 		}
 
 		.del {

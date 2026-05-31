@@ -230,7 +230,7 @@ onBeforeUnmount(() => window.removeEventListener("pointerup", onGlobalPointerUp)
 		padding-bottom: 6px;
 
 		&.active {
-			background: #6cc4ff;
+			background: var(--accent);
 		}
 
 		.label {
@@ -261,7 +261,7 @@ onBeforeUnmount(() => window.removeEventListener("pointerup", onGlobalPointerUp)
 		pointer-events: auto;
 
 		&.active {
-			background: #2f7fb0;
+			background: var(--accent-dark);
 		}
 	}
 

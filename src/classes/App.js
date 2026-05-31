@@ -3,29 +3,33 @@
 	------
 
 	Central application state. Instantiated once in App.vue and provided via
-	inject("app") to every window component, so any number of windows (and any
-	number of views of the same window kind) share one source of truth.
+	inject("app") to every window, so any number of windows share one source of
+	truth. State lives in vue refs on plain members (not a reactive instance) so
+	the same object works inside and outside Vue and stays easy to serialize.
 
-	State lives in vue refs on plain class members rather than making the whole
-	instance reactive, so the same object works inside and outside of Vue and
-	stays easy to (de)serialize later. The window-manager library is agnostic
-	about how we store state — this class is it.
+	Holds: the synth, the input sources (midi + computer keyboard), the project's
+	wave sources, the editor selection, and which source feeds the synth (the
+	"sound source"). A reactive binding keeps the synth's wave in sync with the
+	sound source's cycle, so editing a source updates the sound live.
 */
 
 // vue
-import { ref, shallowRef } from "vue";
+import { ref, shallowRef, watchEffect } from "vue";
 
-// app logic
+// audio + input
 import Synth from "@/audio/Synth.js";
 import MidiInput from "@/input/MidiInput.js";
 import ComputerKeyboard from "@/input/ComputerKeyboard.js";
+
+// wave sources
+import GeneratedWave from "@/classes/sources/GeneratedWave.js";
 
 // main export
 export default class App {
 
 	/**
-	 * Builds the synth, the input sources and the (currently placeholder) wave
-	 * source list, wiring all input methods to the synth.
+	 * Builds the synth, the input sources and the wave-source list, and binds
+	 * the sound source to the synth.
 	 */
 	constructor() {
 
@@ -42,26 +46,30 @@ export default class App {
 			onNoteOff: (note) => this.noteOff(note)
 		});
 
-		// Placeholder wave sources until the Phase 2 data model lands. Each is
-		// a plain { id, name, type }; real WaveSource classes replace these
-		// without changing how windows consume the list or the selection.
+		// the project's wave sources (WaveSource instances)
 		this.sources = shallowRef([]);
 
-		// id of the currently selected source, or null
+		// id of the source open in the editor, and of the source feeding the synth
 		this.selectedSourceId = ref(null);
+		this.soundSourceId = ref(null);
 
-		// counter for friendly placeholder names
+		// friendly-name counter
 		this.sourceCounter = 0;
 
-		// WindowManagerContext, populated once App.vue mounts
+		// WindowManagerContext, set on mount
 		this.wmContext = null;
+
+		// keep the synth's wave in sync with the sound source's cycle
+		this.stopSynthBinding = watchEffect(() => {
+			const source = this.getSource(this.soundSourceId.value);
+			if (source)
+				this.synth.setWaveFromSamples(source.getCycle());
+		});
 	}
 
 
 	/**
-	 * Routes a note-on to the synth, resuming the audio context first if it has
-	 * not been started yet (so the very first key press still sounds when it
-	 * originates from a user gesture).
+	 * Routes a note-on to the synth, resuming the audio context first if needed.
 	 *
 	 * @param {Number} note - midi note number (0-127)
 	 * @param {Number} velocity - normalized velocity (0-1)
@@ -90,9 +98,7 @@ export default class App {
 
 
 	/**
-	 * Resumes audio and requests midi access. Intended to be called from an
-	 * explicit user gesture (the Enable Audio button) so the midi permission
-	 * prompt has a clear trigger.
+	 * Resumes audio and requests midi access from a user gesture.
 	 *
 	 * @returns {Promise<void>}
 	 */
@@ -113,43 +119,49 @@ export default class App {
 
 
 	/**
-	 * Adds a placeholder wave source and selects it.
+	 * Adds a generated wave source, selects it, and makes it the sound source if
+	 * none is set yet.
 	 *
-	 * @param {String} [type="generated"] - the source kind
-	 * @returns {Object} the created source
+	 * @returns {GeneratedWave} the created source
 	 */
-	addSource(type = "generated") {
+	addSource() {
 
 		this.sourceCounter++;
-		const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `src-${this.sourceCounter}-${Date.now()}`;
-		const source = { id, name: `Source ${this.sourceCounter}`, type };
+		const source = new GeneratedWave({ name: `Source ${this.sourceCounter}` });
 
 		this.sources.value = [...this.sources.value, source];
-		this.selectSource(id);
+		this.selectSource(source.id);
+
+		if (this.soundSourceId.value === null)
+			this.soundSourceId.value = source.id;
+
 		return source;
 	}
 
 
 	/**
-	 * Removes a source by id. If it was selected, selection falls back to the
-	 * first remaining source (or null).
+	 * Removes a source by id, repairing the selection and sound-source bindings.
 	 *
 	 * @param {String} id - source id
 	 * @returns {void}
 	 */
 	removeSource(id) {
 
-		this.sources.value = this.sources.value.filter(s => s.id !== id);
+		this.sources.value = this.sources.value.filter((s) => s.id !== id);
+		const firstId = this.sources.value.length ? this.sources.value[0].id : null;
 
 		if (this.selectedSourceId.value === id)
-			this.selectedSourceId.value = this.sources.value.length ? this.sources.value[0].id : null;
+			this.selectedSourceId.value = firstId;
+
+		if (this.soundSourceId.value === id)
+			this.soundSourceId.value = firstId;
 	}
 
 
 	/**
-	 * Sets the current selection.
+	 * Sets the editor selection.
 	 *
-	 * @param {String|null} id - source id, or null to clear
+	 * @param {String|null} id - source id, or null
 	 * @returns {void}
 	 */
 	selectSource(id) {
@@ -158,18 +170,29 @@ export default class App {
 
 
 	/**
-	 * Looks up a source by id.
+	 * Sets which source feeds the synth.
 	 *
-	 * @param {String|null} id - source id
-	 * @returns {Object|null} the source, or null if not found
+	 * @param {String|null} id - source id, or null
+	 * @returns {void}
 	 */
-	getSource(id) {
-		return this.sources.value.find(s => s.id === id) || null;
+	setSoundSource(id) {
+		this.soundSourceId.value = id;
 	}
 
 
 	/**
-	 * Stores the window manager context so the app can drive layouts in JS.
+	 * Looks up a source by id.
+	 *
+	 * @param {String|null} id - source id
+	 * @returns {Object|null}
+	 */
+	getSource(id) {
+		return this.sources.value.find((s) => s.id === id) || null;
+	}
+
+
+	/**
+	 * Stores the window manager context.
 	 *
 	 * @param {Object} ctx - the WindowManagerContext
 	 * @returns {void}
@@ -180,11 +203,13 @@ export default class App {
 
 
 	/**
-	 * Tears down input listeners and silences the synth.
+	 * Tears down input listeners, the synth binding, and silences the synth.
 	 *
 	 * @returns {void}
 	 */
 	dispose() {
+		if (this.stopSynthBinding)
+			this.stopSynthBinding();
 		this.computerKeyboard.detach();
 		this.midiInput.dispose();
 		this.synth.releaseAll();

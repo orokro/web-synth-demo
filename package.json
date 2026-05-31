@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "fft.js": "^4.0.4",
     "sass": "^1.100.0",
     "tone": "^15.1.22",
     "vue": "^3.5.32",
