@@ -49,7 +49,8 @@ const fileInput = ref(null);
 // addable source types
 const ADD_TYPES = [
 	{ type: "generated", label: "Generated" },
-	{ type: "custom", label: "Custom" }
+	{ type: "custom", label: "Custom" },
+	{ type: "combined", label: "Combined" }
 ];
 
 /**

@@ -206,6 +206,18 @@ export default class App {
 
 
 	/**
+	 * Whether `fromId` may reference `toId` without creating a cycle.
+	 *
+	 * @param {String} fromId - the referencing source
+	 * @param {String} toId - the prospective input
+	 * @returns {Boolean}
+	 */
+	canReference(fromId, toId) {
+		return !this.project.wouldCreateCycle(fromId, toId);
+	}
+
+
+	/**
 	 * Clears the project to a fresh, empty state.
 	 *
 	 * @returns {void}

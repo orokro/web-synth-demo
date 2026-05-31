@@ -3,13 +3,13 @@
 	----------
 
 	The serializable document: the list of wave sources, the editor selection
-	and which source feeds the synth. Owns add/remove/select logic and JSON
-	(de)serialization. The App holds one Project and exposes its reactive members
-	to the windows; runtime-only things (synth, inputs, window manager) stay on
-	the App so the document itself stays clean and portable.
+	and which source feeds the synth. Owns add/remove/select logic, JSON
+	(de)serialization, and the reference-cycle prevention used by combining and
+	morphing source types.
 
-	Sources are reconstructed by type through a small registry, so new source
-	kinds only need to register their class and a fromJSON.
+	Sources are reconstructed by type through a small registry. Every source gets
+	a `resolve(id)` lookup bound to this project so referencing types can read
+	their inputs by id (references, never clones).
 */
 
 // vue
@@ -18,6 +18,7 @@ import { ref, shallowRef } from "vue";
 // wave sources
 import GeneratedWave from "@/classes/sources/GeneratedWave.js";
 import CustomWave from "@/classes/sources/CustomWave.js";
+import CombinedWave from "@/classes/sources/CombinedWave.js";
 
 // bump when the on-disk shape changes incompatibly
 export const SCHEMA_VERSION = 1;
@@ -25,7 +26,8 @@ export const SCHEMA_VERSION = 1;
 // type slug -> source class (must expose static fromJSON)
 const SOURCE_TYPES = {
 	generated: GeneratedWave,
-	custom: CustomWave
+	custom: CustomWave,
+	combined: CombinedWave
 };
 
 // main export
@@ -43,6 +45,19 @@ export default class Project {
 
 
 	/**
+	 * Binds the project's id->source resolver onto a source, so referencing
+	 * types can look up their inputs.
+	 *
+	 * @param {WaveSource} source - the source
+	 * @returns {WaveSource}
+	 */
+	bindResolver(source) {
+		source.resolve = (id) => this.getSource(id);
+		return source;
+	}
+
+
+	/**
 	 * Adds a source of the given type, selects it, and makes it the sound source
 	 * if none is set.
 	 *
@@ -53,7 +68,7 @@ export default class Project {
 
 		this.sourceCounter++;
 		const SourceClass = SOURCE_TYPES[type] || GeneratedWave;
-		const source = new SourceClass({ name: `Source ${this.sourceCounter}` });
+		const source = this.bindResolver(new SourceClass({ name: `Source ${this.sourceCounter}` }));
 
 		this.sources.value = [...this.sources.value, source];
 		this.selectedSourceId.value = source.id;
@@ -118,6 +133,43 @@ export default class Project {
 
 
 	/**
+	 * True if `targetId` is reachable from `startId` by following dependencies.
+	 *
+	 * @param {String} startId - source to start from
+	 * @param {String} targetId - source to look for
+	 * @param {Set<String>} [visited] - cycle guard
+	 * @returns {Boolean}
+	 */
+	hasPath(startId, targetId, visited = new Set()) {
+		if (startId === targetId)
+			return true;
+		if (visited.has(startId))
+			return false;
+		visited.add(startId);
+		const src = this.getSource(startId);
+		if (!src)
+			return false;
+		for (const dep of src.getDependencies())
+			if (this.hasPath(dep, targetId, visited))
+				return true;
+		return false;
+	}
+
+
+	/**
+	 * True if making `fromId` reference `toId` would create a cycle (including
+	 * a self-reference).
+	 *
+	 * @param {String} fromId - the referencing source
+	 * @param {String} toId - the prospective input
+	 * @returns {Boolean}
+	 */
+	wouldCreateCycle(fromId, toId) {
+		return fromId === toId || this.hasPath(toId, fromId);
+	}
+
+
+	/**
 	 * Empties the project.
 	 *
 	 * @returns {void}
@@ -162,7 +214,7 @@ export default class Project {
 		for (const sd of data.sources) {
 			const SourceClass = SOURCE_TYPES[sd.type];
 			if (SourceClass && typeof SourceClass.fromJSON === "function")
-				built.push(SourceClass.fromJSON(sd));
+				built.push(this.bindResolver(SourceClass.fromJSON(sd)));
 		}
 
 		this.sources.value = built;

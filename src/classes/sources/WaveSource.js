@@ -3,14 +3,14 @@
 	-------------
 
 	Abstract base for every kind of wave in a project (generated, custom,
-	combined, shaped, gradient, sampled). The one thing they all share is the
-	ability to produce a single normalized cycle of samples via a reactive
-	`cycle` computed — that array is the universal currency the synth and the
-	previews consume.
+	combined, shaped, gradient, sampled). They all share one thing: the ability
+	to produce a single normalized cycle of samples via a reactive `cycle`
+	computed — that array is the universal currency the synth and previews use.
 
-	State lives in vue refs on plain members so the same instance works inside
-	and outside Vue and is easy to serialize. References between sources are by
-	id, never by clone, so edits propagate.
+	Sources that reference other sources (combined, later gradient/shaped) read
+	them through `resolve(id)`, a lookup the Project injects, and declare their
+	references via getDependencies() so the Project can prevent reference cycles.
+	References are by id, never clone, so edits propagate.
 */
 
 // vue
@@ -45,14 +45,17 @@ export default class WaveSource {
 		this.type = type;
 		this.name = ref(name ?? "Untitled");
 
+		// id -> WaveSource lookup, injected by the Project; null when standalone
+		this.resolve = null;
+
 		// reactive single cycle; subclasses implement generate()
 		this.cycle = computed(() => this.generate());
 	}
 
 
 	/**
-	 * Produces one normalized cycle of samples. Subclasses override this; the
-	 * base returns silence.
+	 * Produces one normalized cycle of samples. Subclasses override; the base
+	 * returns silence.
 	 *
 	 * @returns {Float32Array} length CYCLE_RESOLUTION, values in [-1, 1]
 	 */
@@ -68,6 +71,17 @@ export default class WaveSource {
 	 */
 	getCycle() {
 		return this.cycle.value;
+	}
+
+
+	/**
+	 * Ids of other sources this one references. Empty for leaf sources;
+	 * overridden by combining/morphing types so the Project can detect cycles.
+	 *
+	 * @returns {Array<String>}
+	 */
+	getDependencies() {
+		return [];
 	}
 
 
