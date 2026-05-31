@@ -19,6 +19,26 @@ import WavePreview from "@/components/WavePreview.vue";
 // shared app state
 const app = inject("app");
 
+// source type -> material symbol icon name
+const TYPE_ICONS = {
+	generated: "graphic_eq",
+	custom: "gesture",
+	combined: "layers",
+	shaped: "category",
+	gradient: "gradient",
+	sampled: "audio_file"
+};
+
+/**
+ * Icon name for a source type.
+ *
+ * @param {String} type - source kind slug
+ * @returns {String}
+ */
+function typeIcon(type) {
+	return TYPE_ICONS[type] || "show_chart";
+}
+
 // add-type menu state + element (for click-outside)
 const showMenu = ref(false);
 const addWrap = ref(null);
@@ -165,7 +185,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 
 				<span class="info">
 					<span class="name">{{ source.name.value }}</span>
-					<span class="type">{{ source.type }}</span>
+					<span class="type"><span class="material-symbols-outlined">{{ typeIcon(source.type) }}</span>{{ source.type }}</span>
 				</span>
 
 				<span
@@ -367,6 +387,15 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 				color: #fff;
 			}
 		}
+	}
+
+	.type .material-symbols-outlined {
+		font-size: 14px;
+		line-height: 1;
+		margin-right: 3px;
+		vertical-align: -2px;
+		text-transform: none;
+		color: var(--accent);
 	}
 
 </style>

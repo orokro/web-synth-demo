@@ -670,12 +670,12 @@ onBeforeUnmount(() => {
 	<div class="curve-editor">
 		<div class="toolbar">
 			<div class="tools">
-				<button type="button" :class="{ active: tool === 'select' }" @click="tool = 'select'">Select</button>
-				<button type="button" :class="{ active: tool === 'pen' }" @click="tool = 'pen'">Pen</button>
-				<button type="button" :class="{ active: tool === 'anchor' }" @click="tool = 'anchor'">Anchor</button>
+				<button type="button" :class="{ active: tool === 'select' }" @click="tool = 'select'"><span class="material-symbols-outlined">arrow_selector_tool</span>Select</button>
+				<button type="button" :class="{ active: tool === 'pen' }" @click="tool = 'pen'"><span class="material-symbols-outlined">draw</span>Pen</button>
+				<button type="button" :class="{ active: tool === 'anchor' }" @click="tool = 'anchor'"><span class="material-symbols-outlined">anchor</span>Anchor</button>
 			</div>
 			<div class="tools">
-				<button type="button" @click="viewFit" title="Frame everything (incl. out-of-bounds handles)">Fit</button>
+				<button type="button" @click="viewFit" title="Frame everything (incl. out-of-bounds handles)"><span class="material-symbols-outlined">fit_screen</span>Fit</button>
 				<button type="button" @click="viewHome" title="Reset to 0..1 x -1..1">1:1</button>
 			</div>
 			<label class="shade-toggle">
@@ -795,6 +795,16 @@ onBeforeUnmount(() => {
 		}
 
 		.hint { font-size: 11px; color: #666; }
+	}
+
+	.tools button {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+
+	.tools button .material-symbols-outlined {
+		font-size: 16px;
 	}
 
 	.canvas-wrap {
