@@ -6,7 +6,8 @@
 	via a lazy AudioContext), shows a min/max waveform envelope with two draggable
 	trim handles selecting the used region, and reports the file name + natural
 	(trimmed) duration. A "Set base length" button adopts that duration as the
-	synth's sampler base length so the sample plays back at its original speed.
+	synth's sampler base length so the sample plays back at its original speed. A
+	"Normalize" button stretches the amplitude to full scale (non-destructive).
 
 	The waveform is drawn on a canvas (cheap for long buffers); trim handles are
 	overlaid as absolutely-positioned bars dragged in normalized 0..1 space.
@@ -153,7 +154,8 @@ function draw() {
 	if (!mono || mono.length < 2)
 		return;
 
-	// per-pixel min/max envelope
+	// per-pixel min/max envelope (gain applied so the view matches the output)
+	const gain = props.source.gain.value;
 	const per = mono.length / w;
 	ctx.strokeStyle = "#00ABAE";
 	ctx.lineWidth = 1;
@@ -170,8 +172,10 @@ function draw() {
 		}
 		if (start >= end)
 			lo = hi = 0;
-		ctx.moveTo(x + 0.5, mid - hi * mid);
-		ctx.lineTo(x + 0.5, mid - lo * mid);
+		hi *= gain;
+		lo *= gain;
+		ctx.moveTo(x + 0.5, mid - Math.max(-1, Math.min(1, hi)) * mid);
+		ctx.lineTo(x + 0.5, mid - Math.max(-1, Math.min(1, lo)) * mid);
 	}
 	ctx.stroke();
 }
@@ -240,8 +244,18 @@ function setBaseLength() {
 		app.synth.setBaseLength(d);
 }
 
-// redraw whenever the audio buffer changes
-watch(() => props.source.version.value, () => nextTick(draw));
+/**
+ * Normalizes the sample so the trimmed region peaks at full scale.
+ *
+ * @returns {void}
+ */
+function normalize() {
+	props.source.normalize();
+	app.requestSave();
+}
+
+// redraw whenever the audio buffer or gain changes
+watch(() => [props.source.version.value, props.source.gain.value], () => nextTick(draw));
 
 // keep the envelope crisp on resize
 let resizeObserver = null;
@@ -301,9 +315,14 @@ onBeforeUnmount(() => {
 
 		<div class="info">
 			<span class="dur">Trimmed length: <strong>{{ duration.toFixed(3) }} s</strong></span>
-			<button type="button" class="set-base" :disabled="!hasAudio" @click="setBaseLength">
-				Set as base length
-			</button>
+			<div class="actions">
+				<button type="button" class="action" :disabled="!hasAudio" title="Stretch amplitude to full scale" @click="normalize">
+					Normalize
+				</button>
+				<button type="button" class="action" :disabled="!hasAudio" @click="setBaseLength">
+					Set as base length
+				</button>
+			</div>
 		</div>
 
 	</div>
@@ -433,7 +452,12 @@ onBeforeUnmount(() => {
 			strong { color: #ddd; }
 		}
 
-		.set-base {
+		.actions {
+			display: flex;
+			gap: 8px;
+		}
+
+		.action {
 			padding: 6px 12px;
 			border: 1px solid #444;
 			border-radius: 5px;

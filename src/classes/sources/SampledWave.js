@@ -12,6 +12,10 @@
 	It is a "timed" source — it has a natural duration in seconds — so the synth
 	can adopt that as its sampler base length ("Set base length").
 
+	A non-destructive output gain (set by normalize()) scales the played samples
+	so a quiet recording can fill the full amplitude range without touching the
+	stored audio.
+
 	The audio persists in the project as base64 Int16 (capped in length to keep
 	localStorage bounded); fidelity is fine for the demo.
 */
@@ -107,6 +111,7 @@ export default class SampledWave extends WaveSource {
 	 * @param {Number} [opts.sampleRate=44100]
 	 * @param {Number} [opts.trimStart=0]
 	 * @param {Number} [opts.trimEnd=1]
+	 * @param {Number} [opts.gain=1] - output gain (set by normalize)
 	 * @param {String} [opts.audio] - base64 Int16 mono (from toJSON)
 	 * @param {Float32Array} [opts.mono] - decoded mono (in-app import)
 	 */
@@ -118,6 +123,9 @@ export default class SampledWave extends WaveSource {
 		this.sampleRate = opts.sampleRate ?? 44100;
 		this.trimStart = ref(clamp01(opts.trimStart ?? 0));
 		this.trimEnd = ref(clamp01(opts.trimEnd ?? 1));
+
+		// non-destructive output gain; normalize() sets it to fill [-1,1]
+		this.gain = ref(opts.gain ?? 1);
 
 		// decoded mono (plain, not a ref); version bumps to invalidate the cycle
 		this.mono = opts.mono instanceof Float32Array ? opts.mono : decodeMono(opts.audio);
@@ -140,7 +148,35 @@ export default class SampledWave extends WaveSource {
 		this.fileName.value = fileName || "";
 		this.trimStart.value = 0;
 		this.trimEnd.value = 1;
+		this.gain.value = 1;
 		this.version.value++;
+	}
+
+
+	/**
+	 * Sets the output gain so the trimmed region peaks at full scale (±1).
+	 * Non-destructive: the stored audio is untouched, only the gain changes.
+	 * Idempotent (always computed from the raw samples).
+	 *
+	 * @returns {void}
+	 */
+	normalize() {
+
+		const mono = this.mono;
+		if (!mono || mono.length < 2)
+			return;
+
+		const s0 = Math.floor(clamp01(Math.min(this.trimStart.value, this.trimEnd.value)) * mono.length);
+		const s1 = Math.floor(clamp01(Math.max(this.trimStart.value, this.trimEnd.value)) * mono.length);
+
+		let peak = 0;
+		for (let i = s0; i < s1; i++) {
+			const m = Math.abs(mono[i]);
+			if (m > peak)
+				peak = m;
+		}
+
+		this.gain.value = peak > 1e-6 ? 1 / peak : 1;
 	}
 
 
@@ -167,16 +203,18 @@ export default class SampledWave extends WaveSource {
 
 
 	/**
-	 * Resamples the trimmed region to n samples (linear interpolation).
+	 * Resamples the trimmed region to n samples (linear interpolation), scaled
+	 * by the output gain.
 	 *
 	 * @returns {Float32Array}
 	 */
 	generate(n = CYCLE_RESOLUTION) {
 
-		// touch reactive deps so trim edits / new imports re-render
+		// touch reactive deps so trim edits / new imports / gain changes re-render
 		const v = this.version.value;
 		const ts = this.trimStart.value;
 		const te = this.trimEnd.value;
+		const gain = this.gain.value;
 		void v;
 
 		const out = new Float32Array(n);
@@ -196,7 +234,7 @@ export default class SampledWave extends WaveSource {
 			const frac = src - k;
 			const a = mono[Math.min(k, s1 - 1)];
 			const b = mono[Math.min(k + 1, s1 - 1)];
-			out[i] = a + (b - a) * frac;
+			out[i] = (a + (b - a) * frac) * gain;
 		}
 		return out;
 	}
@@ -212,6 +250,7 @@ export default class SampledWave extends WaveSource {
 			sampleRate: this.sampleRate,
 			trimStart: this.trimStart.value,
 			trimEnd: this.trimEnd.value,
+			gain: this.gain.value,
 			audio: encodeMono(this.mono)
 		};
 	}

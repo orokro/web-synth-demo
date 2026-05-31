@@ -6,7 +6,8 @@
 	frequency (jog wheel), amplitude scale (exp knob) and blend mode (matrix of
 	radio buttons). The first input is the base; later inputs blend onto it. Rows
 	reorder by dragging the grip handle. An auto-normalize toggle scales the
-	output to fit instead of clipping.
+	output to fit instead of clipping. A per-row checkbox enables/disables an
+	input without removing it.
 
 	Inputs reference other sources by id, so editing a referenced source updates
 	this one live. The add-input list is filtered so picking a source can't
@@ -100,6 +101,17 @@ function inputSource(input) {
 }
 
 /**
+ * Enables or disables an input without removing it.
+ *
+ * @param {Number} index - input index
+ * @param {Boolean} enabled - whether the input contributes
+ * @returns {void}
+ */
+function toggleEnabled(index, enabled) {
+	updateInput(index, "enabled", enabled);
+}
+
+/**
  * Toggles auto-normalize.
  *
  * @param {Event} event - checkbox change
@@ -188,11 +200,19 @@ function resetDrag() {
 				v-for="(inp, i) in inputs"
 				:key="i"
 				class="input-row"
-				:class="{ over: overIndex === i }"
+				:class="{ over: overIndex === i, disabled: inp.enabled === false }"
 				@dragover.prevent="onDragOver(i)"
 				@drop="onDrop(i)"
 				@dragend="resetDrag"
 			>
+				<input
+					class="enable"
+					type="checkbox"
+					:checked="inp.enabled !== false"
+					title="Enable / disable this input"
+					@change="toggleEnabled(i, $event.target.checked)"
+				/>
+
 				<span class="grip material-symbols-outlined" draggable="true" title="Drag to reorder" @dragstart="onDragStart(i, $event)">drag_indicator</span>
 
 				<span class="thumb">
@@ -308,6 +328,20 @@ function resetDrag() {
 		border-radius: 6px;
 
 		&.over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-border) inset; }
+
+		&.disabled {
+			opacity: 0.45;
+
+			.thumb, .meta { filter: grayscale(0.6); }
+		}
+
+		.enable {
+			flex: 0 0 auto;
+			width: 15px;
+			height: 15px;
+			accent-color: var(--accent);
+			cursor: pointer;
+		}
 
 		.grip {
 			flex: 0 0 auto;

@@ -35,10 +35,10 @@ function clamp01(v) {
  * Normalizes a stop with defaults.
  *
  * @param {Object} s - partial stop
- * @returns {{sourceId:String, position:Number, frequency:Number}}
+ * @returns {{sourceId:String, position:Number, frequency:Number, enabled:Boolean}}
  */
 function normStop(s) {
-	return { sourceId: s.sourceId, position: clamp01(s.position ?? 0.5), frequency: s.frequency ?? 1 };
+	return { sourceId: s.sourceId, position: clamp01(s.position ?? 0.5), frequency: s.frequency ?? 1, enabled: s.enabled ?? true };
 }
 
 // main export
@@ -112,7 +112,8 @@ export default class GradientWave extends WaveSource {
 	generate(n = CYCLE_RESOLUTION) {
 
 		const out = new Float32Array(n);
-		const stops = this.stops.value;
+		// only enabled stops participate in the morph
+		const stops = this.stops.value.filter((s) => s.enabled !== false);
 		if (!stops.length)
 			return out;
 

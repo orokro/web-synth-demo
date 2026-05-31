@@ -5,8 +5,9 @@
 	Editor for a GradientWave: stops placed along 0..1 (one cycle), each
 	referencing a source wave with its own frequency. The wave crossfades between
 	bracketing stops across the cycle. A draggable strip sets stop positions; the
-	rows below set each stop's source / frequency and remove it. The morphed
-	result preview is the EditorWindow's wave preview above.
+	rows below set each stop's source / frequency and remove it. A per-row
+	checkbox enables/disables a stop without removing it. The morphed result
+	preview is the EditorWindow's wave preview above.
 
 	The add-stop list is filtered so a stop can't create a reference cycle.
 -->
@@ -172,7 +173,7 @@ function onStripUp(e) {
 				v-for="(stop, i) in stops"
 				:key="i"
 				class="marker"
-				:class="{ selected: i === selectedIndex }"
+				:class="{ selected: i === selectedIndex, disabled: stop.enabled === false }"
 				:style="{ left: (stop.position * 100) + '%' }"
 				:title="stopSource(stop) ? stopSource(stop).name.value : '(deleted)'"
 				@pointerdown="onMarkerDown(i, $event)"
@@ -186,9 +187,18 @@ function onStripUp(e) {
 				v-for="(stop, i) in stops"
 				:key="i"
 				class="stop-row"
-				:class="{ selected: i === selectedIndex }"
+				:class="{ selected: i === selectedIndex, disabled: stop.enabled === false }"
 				@click="selectedIndex = i"
 			>
+				<input
+					class="enable"
+					type="checkbox"
+					:checked="stop.enabled !== false"
+					title="Enable / disable this stop"
+					@click.stop
+					@change="updateStop(i, 'enabled', $event.target.checked)"
+				/>
+
 				<span class="num">{{ i + 1 }}</span>
 
 				<span class="thumb">
@@ -279,6 +289,11 @@ function onStripUp(e) {
 				color: var(--accent);
 				box-shadow: 0 0 6px var(--accent), inset 0 1px 1px rgba(255, 255, 255, 0.15);
 			}
+
+			&.disabled {
+				opacity: 0.4;
+				filter: grayscale(0.7);
+			}
 		}
 	}
 
@@ -302,6 +317,18 @@ function onStripUp(e) {
 		cursor: pointer;
 
 		&.selected { border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border) inset; }
+
+		&.disabled {
+			.thumb, .meta { opacity: 0.45; filter: grayscale(0.6); }
+		}
+
+		.enable {
+			flex: 0 0 auto;
+			width: 15px;
+			height: 15px;
+			accent-color: var(--accent);
+			cursor: pointer;
+		}
 
 		.num {
 			flex: 0 0 auto;

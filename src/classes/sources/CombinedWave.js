@@ -28,14 +28,15 @@ export const BLEND_MODES = ["add", "subtract", "multiply", "divide", "max", "min
  * Normalizes an input descriptor with defaults.
  *
  * @param {Object} input - partial input
- * @returns {{sourceId:String, frequency:Number, scale:Number, blendMode:String}}
+ * @returns {{sourceId:String, frequency:Number, scale:Number, blendMode:String, enabled:Boolean}}
  */
 function normalizeInput(input) {
 	return {
 		sourceId: input.sourceId,
 		frequency: input.frequency ?? 1,
 		scale: input.scale ?? 1,
-		blendMode: input.blendMode ?? "add"
+		blendMode: input.blendMode ?? "add",
+		enabled: input.enabled ?? true
 	};
 }
 
@@ -130,6 +131,10 @@ export default class CombinedWave extends WaveSource {
 		let started = false;
 
 		for (const inp of inputs) {
+
+			// disabled inputs are skipped entirely (the next enabled one becomes base)
+			if (inp.enabled === false)
+				continue;
 
 			const src = this.resolve(inp.sourceId);
 			if (!src)
