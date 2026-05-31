@@ -9,10 +9,16 @@
 	etc. State lives in vue refs on plain members so the same object works inside
 	and outside Vue and stays easy to serialize.
 
-	Persistence: the whole session (project + window layout) autosaves to
-	localStorage debounced on change and on page unload, and is restored on
-	startup, so a refresh brings everything back. Sessions can also be
-	exported/imported as JSON.
+	Persistence: the whole session (project + window layout + editor pins)
+	autosaves to localStorage debounced on change and on page unload, and is
+	restored on startup, so a refresh brings everything back. Sessions can also
+	be exported/imported as JSON.
+
+	Editor pins: vue-win-mgr serializes only window slugs + frame geometry (no
+	per-window ids/props), so editor windows report their pin and on-screen
+	center to this registry. After a restore, once the layout has settled, each
+	editor claims the saved pin whose normalized center best matches it. Centers
+	are normalized [0..1], so matching is resolution-independent.
 */
 
 // vue
@@ -28,6 +34,12 @@ import Project, { SCHEMA_VERSION } from "@/classes/Project.js";
 
 // localStorage key for the autosaved session
 const SESSION_KEY = "web-synth-demo:session:v1";
+
+// max normalized-center distance for an editor to claim a saved pin
+const PIN_MATCH_THRESHOLD = 0.12;
+
+// delay after a layout restore before re-pinning editors, to let geometry settle
+const RECONCILE_DELAY_MS = 90;
 
 // main export
 export default class App {
@@ -61,6 +73,11 @@ export default class App {
 		this.wmContext = null;
 		this.pendingLayout = null;
 
+		// editor pin registry: uid -> { report(), claim() } + pins awaiting a claim
+		this.editorReporters = new Map();
+		this.pendingEditorPins = [];
+		this.reconcileTimer = null;
+
 		// debounce handle for autosave
 		this.saveTimer = null;
 
@@ -77,7 +94,7 @@ export default class App {
 		// autosave whenever the serialized project changes (debounced)
 		this.stopAutosave = watch(() => JSON.stringify(this.project.toJSON()), () => this.queueSave());
 
-		// capture the final state (including layout) on page unload
+		// capture the final state (including layout + pins) on page unload
 		this.onBeforeUnload = () => this.saveSession();
 		if (typeof window !== "undefined")
 			window.addEventListener("beforeunload", this.onBeforeUnload);
@@ -200,18 +217,138 @@ export default class App {
 
 
 	/**
-	 * Builds a full session object (document + current window layout).
+	 * Registers an editor window's pin handlers.
+	 *
+	 * @param {Number} uid - the editor instance id
+	 * @param {{ report: Function, claim: Function }} handlers - report() returns
+	 *        { cx, cy, pinnedId }; claim() adopts a matching saved pin
+	 * @returns {void}
+	 */
+	registerEditor(uid, handlers) {
+		this.editorReporters.set(uid, handlers);
+	}
+
+
+	/**
+	 * Unregisters an editor window.
+	 *
+	 * @param {Number} uid - the editor instance id
+	 * @returns {void}
+	 */
+	unregisterEditor(uid) {
+		this.editorReporters.delete(uid);
+	}
+
+
+	/**
+	 * Requests a (debounced) save, e.g. after a pin toggle that the project
+	 * watch would not otherwise notice.
+	 *
+	 * @returns {void}
+	 */
+	requestSave() {
+		this.queueSave();
+	}
+
+
+	/**
+	 * Claims the saved pin whose normalized center is closest to (cx, cy), if
+	 * within the match threshold. The claimed entry is consumed so stacked
+	 * editors take successive pins.
+	 *
+	 * @param {Number} cx - normalized center x (0-1)
+	 * @param {Number} cy - normalized center y (0-1)
+	 * @returns {String|null} the pinned source id, or null if no match
+	 */
+	claimEditorPin(cx, cy) {
+
+		let bestIndex = -1;
+		let bestDist = Infinity;
+
+		for (let i = 0; i < this.pendingEditorPins.length; i++) {
+			const entry = this.pendingEditorPins[i];
+			const dist = Math.hypot(entry.cx - cx, entry.cy - cy);
+			if (dist < bestDist) {
+				bestDist = dist;
+				bestIndex = i;
+			}
+		}
+
+		if (bestIndex === -1 || bestDist > PIN_MATCH_THRESHOLD)
+			return null;
+
+		const [entry] = this.pendingEditorPins.splice(bestIndex, 1);
+		return entry.pinnedId || null;
+	}
+
+
+	/**
+	 * Schedules a one-shot pass that lets each editor claim its saved pin, once
+	 * the restored layout has had a moment to settle.
+	 *
+	 * @returns {void}
+	 */
+	scheduleReconcile() {
+		if (this.reconcileTimer)
+			clearTimeout(this.reconcileTimer);
+		this.reconcileTimer = setTimeout(() => this.reconcileEditorPins(), RECONCILE_DELAY_MS);
+	}
+
+
+	/**
+	 * Schedules a reconcile only if there are pins to restore and the window
+	 * manager is ready.
+	 *
+	 * @returns {void}
+	 */
+	maybeScheduleReconcile() {
+		if (this.wmContext && this.pendingEditorPins.length)
+			this.scheduleReconcile();
+	}
+
+
+	/**
+	 * Lets every registered editor claim a matching saved pin, then clears the
+	 * pending set so late-created editors don't grab leftovers.
+	 *
+	 * @returns {void}
+	 */
+	reconcileEditorPins() {
+		this.reconcileTimer = null;
+		this.editorReporters.forEach((handlers) => {
+			if (handlers && typeof handlers.claim === "function")
+				handlers.claim();
+		});
+		this.pendingEditorPins = [];
+		this.queueSave();
+	}
+
+
+	/**
+	 * Builds a full session object (document + window layout + editor pins).
 	 *
 	 * @returns {Object}
 	 */
 	serializeSession() {
+
 		const layout = this.wmContext && typeof this.wmContext.getLayoutDetails === "function"
 			? this.wmContext.getLayoutDetails()
 			: (this.pendingLayout || null);
+
+		const editorPins = [];
+		this.editorReporters.forEach((handlers) => {
+			if (handlers && typeof handlers.report === "function") {
+				const entry = handlers.report();
+				if (entry && entry.pinnedId)
+					editorPins.push(entry);
+			}
+		});
+
 		return {
 			schemaVersion: SCHEMA_VERSION,
 			project: this.project.toJSON(),
-			layout
+			layout,
+			editorPins
 		};
 	}
 
@@ -263,8 +400,8 @@ export default class App {
 
 
 	/**
-	 * Applies a session object: the document now, and the layout as soon as the
-	 * window manager context is available.
+	 * Applies a session object: the document now, the layout as soon as the
+	 * window manager context is available, and the pins once it settles.
 	 *
 	 * @param {Object} data - output of serializeSession()
 	 * @returns {void}
@@ -275,7 +412,9 @@ export default class App {
 		if (data.project)
 			this.project.loadJSON(data.project);
 		this.pendingLayout = data.layout || null;
+		this.pendingEditorPins = Array.isArray(data.editorPins) ? data.editorPins.slice() : [];
 		this.applyPendingLayout();
+		this.maybeScheduleReconcile();
 	}
 
 
@@ -331,7 +470,8 @@ export default class App {
 
 
 	/**
-	 * Stores the window manager context and applies any pending layout.
+	 * Stores the window manager context, applies any pending layout, and
+	 * schedules pin reconciliation.
 	 *
 	 * @param {Object} ctx - the WindowManagerContext
 	 * @returns {void}
@@ -339,6 +479,7 @@ export default class App {
 	setWindowManagerContext(ctx) {
 		this.wmContext = ctx;
 		this.applyPendingLayout();
+		this.maybeScheduleReconcile();
 	}
 
 
@@ -349,6 +490,8 @@ export default class App {
 	 */
 	dispose() {
 		this.saveSession();
+		if (this.reconcileTimer)
+			clearTimeout(this.reconcileTimer);
 		if (this.stopSynthBinding)
 			this.stopSynthBinding();
 		if (this.stopAutosave)
