@@ -220,8 +220,12 @@ export default class Synth {
 
 		if (!this.isStarted.value || !this.ctx)
 			return;
+
+		// re-pressing a note that's still sounding steals (interrupts) it so the
+		// new attack fires immediately — matters for sampler one-shots, which
+		// otherwise linger until they finish
 		if (this.voices.has(midiNote))
-			return;
+			this.stealVoice(midiNote);
 
 		const now = this.ctx.currentTime;
 		const gain = this.ctx.createGain();
@@ -260,6 +264,38 @@ export default class Synth {
 		const next = new Set(this.activeNotes.value);
 		next.add(midiNote);
 		this.activeNotes.value = next;
+	}
+
+
+	/**
+	 * Immediately retires the voice on a note so a re-press can take its slot.
+	 * Uses a very short fade (not an abrupt cut) to avoid a click, then frees
+	 * the slot now; the old nodes disconnect themselves on their natural end.
+	 *
+	 * @param {Number} midiNote - midi note number (0-127)
+	 * @returns {void}
+	 */
+	stealVoice(midiNote) {
+
+		const voice = this.voices.get(midiNote);
+		if (!voice)
+			return;
+
+		const now = this.ctx.currentTime;
+		const g = voice.gain.gain;
+
+		try {
+			g.cancelScheduledValues(now);
+			g.setValueAtTime(g.value, now);
+			g.linearRampToValueAtTime(0, now + 0.006);
+			voice.node.stop(now + 0.02);
+		} catch (err) {
+			// already stopped — fine
+		}
+
+		// free the slot right away; finishVoice (via onended) only cleans this
+		// old voice's nodes, and its guard leaves the incoming voice untouched
+		this.voices.delete(midiNote);
 	}
 
 
