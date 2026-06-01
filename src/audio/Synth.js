@@ -239,20 +239,36 @@ export default class Synth {
 	applyAttack(param, now, peak) {
 
 		const env = this.envelope;
-		if (env) {
-			const { pre } = env.segments();
-			const atk = Math.max(0.005, env.attackTime.value);
-			const curve = new Float32Array(pre.length);
-			for (let i = 0; i < pre.length; i++)
-				curve[i] = Math.max(0, pre[i] * peak);
-			param.setValueCurveAtTime(curve, now, atk);
-			param.setValueAtTime(curve[curve.length - 1], now + atk);
+		if (!env) {
+			param.setValueAtTime(0, now);
+			param.linearRampToValueAtTime(peak, now + ENV.attack);
+			param.linearRampToValueAtTime(peak * ENV.sustain, now + ENV.attack + ENV.decay);
 			return;
 		}
 
+		const a = env.stage("attack");
+		const hold = env.holdLevel() * peak;
+
+		if (a && a.enabled) {
+			const len = Math.max(0.005, a.length);
+			const amp = env.stageCurve("attack");
+			if (amp) {
+				const curve = new Float32Array(amp.length);
+				for (let i = 0; i < amp.length; i++)
+					curve[i] = Math.max(0, amp[i] * peak);
+				param.setValueCurveAtTime(curve, now, len);
+				param.setValueAtTime(curve[curve.length - 1], now + len);
+			} else {
+				// enabled but no source -> linear rise to the hold level
+				param.setValueAtTime(0, now);
+				param.linearRampToValueAtTime(hold, now + len);
+			}
+			return;
+		}
+
+		// no attack stage -> near-instant rise to the hold level
 		param.setValueAtTime(0, now);
-		param.linearRampToValueAtTime(peak, now + ENV.attack);
-		param.linearRampToValueAtTime(peak * ENV.sustain, now + ENV.attack + ENV.decay);
+		param.linearRampToValueAtTime(hold, now + 0.005);
 	}
 
 
@@ -270,35 +286,55 @@ export default class Synth {
 		const cur = param.value;
 		const env = this.envelope;
 
-		if (env) {
-			const relTime = Math.max(0.005, env.releaseTime.value);
-			try {
-				const { rel } = env.segments();
-				const sl = env.sustainLevel();
-				const scale = sl > 1e-4 ? cur / sl : 0;
-				const curve = new Float32Array(rel.length);
-				for (let i = 0; i < rel.length; i++)
-					curve[i] = Math.max(0, rel[i] * scale);
-				curve[0] = Math.max(0, cur);
-				curve[curve.length - 1] = 0;
-				if (param.cancelAndHoldAtTime)
-					param.cancelAndHoldAtTime(now);
-				else
-					param.cancelScheduledValues(now);
-				param.setValueCurveAtTime(curve, now, relTime);
-				return relTime;
-			} catch (err) {
-				param.cancelScheduledValues(now);
-				param.setValueAtTime(cur, now);
-				param.linearRampToValueAtTime(0, now + relTime);
-				return relTime;
-			}
+		if (!env) {
+			param.cancelScheduledValues(now);
+			param.setValueAtTime(cur, now);
+			param.linearRampToValueAtTime(0, now + ENV.release);
+			return ENV.release;
 		}
 
-		param.cancelScheduledValues(now);
-		param.setValueAtTime(cur, now);
-		param.linearRampToValueAtTime(0, now + ENV.release);
-		return ENV.release;
+		const r = env.stage("release");
+
+		// hold the current level, then schedule the release from there
+		if (param.cancelAndHoldAtTime) {
+			param.cancelAndHoldAtTime(now);
+		} else {
+			param.cancelScheduledValues(now);
+			param.setValueAtTime(cur, now);
+		}
+
+		if (!r || !r.enabled) {
+			const t = 0.02;
+			param.linearRampToValueAtTime(0, now + t);
+			return t;
+		}
+
+		const len = Math.max(0.005, r.length);
+		const amp = env.stageCurve("release");
+
+		if (!amp) {
+			// enabled but no source -> linear from the current level to silence
+			param.linearRampToValueAtTime(0, now + len);
+			return len;
+		}
+
+		try {
+			// anchor the curve's in-point to the current level, end at silence
+			const r0 = amp[0];
+			const scale = r0 > 1e-4 ? cur / r0 : 0;
+			const curve = new Float32Array(amp.length);
+			for (let i = 0; i < amp.length; i++)
+				curve[i] = Math.max(0, amp[i] * scale);
+			curve[0] = Math.max(0, cur);
+			curve[curve.length - 1] = 0;
+			param.setValueCurveAtTime(curve, now, len);
+			return len;
+		} catch (err) {
+			param.cancelScheduledValues(now);
+			param.setValueAtTime(cur, now);
+			param.linearRampToValueAtTime(0, now + len);
+			return len;
+		}
 	}
 
 

@@ -54,8 +54,10 @@ export default class App {
 		// audio output
 		this.synth = new Synth();
 
-		// synth-wide amplitude envelope; loadSession() may repopulate it in place
+		// synth-wide amplitude envelope; loadSession() may repopulate it in place.
+		// stages reference project sources by id, resolved the same way sources do.
 		this.envelope = new Envelope();
+		this.envelope.resolve = (id) => this.getSource(id);
 		this.synth.setEnvelope(this.envelope);
 
 		// hardware + on-screen input, both routed to noteOn / noteOff
