@@ -97,6 +97,62 @@ function select(id) {
 	app.selectSource(id);
 }
 
+// inline-rename state: the source id being edited + its working name
+const editingId = ref(null);
+const editingName = ref("");
+
+/**
+ * Enters inline-rename mode for a source.
+ *
+ * @param {Object} source - the source to rename
+ * @returns {void}
+ */
+function startRename(source) {
+	editingId.value = source.id;
+	editingName.value = source.name.value;
+}
+
+/**
+ * Focuses and selects the rename input when it mounts (function ref).
+ *
+ * @param {HTMLInputElement|null} el - the input element (null on unmount)
+ * @returns {void}
+ */
+function focusRename(el) {
+	// the function ref re-fires on each keystroke's re-render; only focus/select
+	// on the first call (when the input isn't already focused) so typing past two
+	// characters doesn't keep re-selecting and overwriting
+	if (el && document.activeElement !== el) {
+		el.focus();
+		el.select();
+	}
+}
+
+/**
+ * Commits the edited name (if non-empty) and leaves rename mode.
+ *
+ * @param {Object} source - the source being renamed
+ * @returns {void}
+ */
+function commitRename(source) {
+	if (editingId.value !== source.id)
+		return;
+	const next = editingName.value.trim();
+	if (next)
+		source.name.value = next;
+	editingId.value = null;
+	app.requestSave();
+}
+
+/**
+ * Cancels rename mode without changing the name.
+ *
+ * @returns {void}
+ */
+function cancelRename() {
+	editingId.value = null;
+}
+
 /**
  * Removes a source without also selecting it.
  *
@@ -188,7 +244,17 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 				<span class="thumb"><WavePreview :samples="source.getCycle()" /></span>
 
 				<span class="info">
-					<span class="name">{{ source.name.value }}</span>
+					<input
+						v-if="editingId === source.id"
+						:ref="focusRename"
+						class="name-edit"
+						v-model="editingName"
+						@click.stop
+						@keydown.enter="commitRename(source)"
+						@keydown.esc="cancelRename"
+						@blur="commitRename(source)"
+					/>
+					<span v-else class="name" title="Double-click to rename" @dblclick.stop="startRename(source)">{{ source.name.value }}</span>
 					<span class="type"><span class="material-symbols-outlined">{{ typeIcon(source.type) }}</span>{{ source.type }}</span>
 				</span>
 
@@ -356,6 +422,17 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 				white-space: nowrap;
 				overflow: hidden;
 				text-overflow: ellipsis;
+			}
+
+			.name-edit {
+				width: 100%;
+				font-size: 13px;
+				background: #26262c;
+				color: #fff;
+				border: 1px solid var(--accent-border);
+				border-radius: 3px;
+				padding: 1px 4px;
+				outline: none;
 			}
 
 			.type {

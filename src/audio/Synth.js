@@ -75,6 +75,9 @@ export default class Synth {
 
 		// midiNote -> { node, gain, isOsc }
 		this.voices = new Map();
+
+		// one-shot preview voice (audition button), independent of played notes
+		this.previewNode = null;
 	}
 
 
@@ -347,6 +350,67 @@ export default class Synth {
 			const next = new Set(this.activeNotes.value);
 			next.delete(midiNote);
 			this.activeNotes.value = next;
+		}
+	}
+
+
+	/**
+	 * Plays a one-shot preview of arbitrary mono samples through the master gain,
+	 * independent of the played voices. Re-calling (or stopPreview) interrupts a
+	 * preview already in flight.
+	 *
+	 * @param {Float32Array} data - mono samples to audition
+	 * @param {Number} sampleRate - sample rate of the data (Hz)
+	 * @param {Function} [onEnded] - called when playback ends (natural or stopped)
+	 * @returns {void}
+	 */
+	previewBuffer(data, sampleRate, onEnded) {
+
+		if (!this.isStarted.value || !this.ctx || !data || data.length < 1)
+			return;
+
+		this.stopPreview();
+
+		const buffer = this.ctx.createBuffer(1, data.length, sampleRate || this.ctx.sampleRate);
+		buffer.getChannelData(0).set(data);
+
+		const node = this.ctx.createBufferSource();
+		node.buffer = buffer;
+		node.connect(this.master);
+
+		node.onended = () => {
+			try {
+				node.disconnect();
+			} catch (err) {
+				// already disconnected
+			}
+			if (this.previewNode === node)
+				this.previewNode = null;
+			if (typeof onEnded === "function")
+				onEnded();
+		};
+
+		node.start();
+		this.previewNode = node;
+	}
+
+
+	/**
+	 * Stops the current preview voice, if any.
+	 *
+	 * @returns {void}
+	 */
+	stopPreview() {
+
+		if (!this.previewNode)
+			return;
+
+		const node = this.previewNode;
+		this.previewNode = null;
+		try {
+			node.stop();
+		} catch (err) {
+			// already stopped — onended still fires and disconnects it
 		}
 	}
 

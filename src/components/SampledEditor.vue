@@ -35,6 +35,9 @@ const canvasEl = ref(null);
 const busy = ref(false);
 const error = ref("");
 
+// whether a preview is currently sounding
+const playing = ref(false);
+
 // lazily-created context for decoding (separate from the synth graph)
 let decodeCtx = null;
 
@@ -254,6 +257,33 @@ function normalize() {
 	app.requestSave();
 }
 
+/**
+ * Auditions the trimmed sample through the synth's output. Toggles: a second
+ * click (or end of playback) stops it. Enables audio first if needed.
+ *
+ * @returns {Promise<void>}
+ */
+async function togglePreview() {
+
+	if (playing.value) {
+		app.synth.stopPreview();
+		playing.value = false;
+		return;
+	}
+
+	if (!app.synth.isStarted.value)
+		await app.enableAudio();
+
+	const data = props.source.renderNatural();
+	if (!data.length)
+		return;
+
+	playing.value = true;
+	app.synth.previewBuffer(data, props.source.sampleRate, () => {
+		playing.value = false;
+	});
+}
+
 // redraw whenever the audio buffer or gain changes
 watch(() => [props.source.version.value, props.source.gain.value], () => nextTick(draw));
 
@@ -267,6 +297,7 @@ onMounted(() => {
 	}
 });
 onBeforeUnmount(() => {
+	app.synth.stopPreview();
 	if (resizeObserver)
 		resizeObserver.disconnect();
 	window.removeEventListener("pointermove", onDrag);
@@ -316,6 +347,9 @@ onBeforeUnmount(() => {
 		<div class="info">
 			<span class="dur">Trimmed length: <strong>{{ duration.toFixed(3) }} s</strong></span>
 			<div class="actions">
+				<button type="button" class="action play" :disabled="!hasAudio" @click="togglePreview">
+					{{ playing ? "Stop" : "Play" }}
+				</button>
 				<button type="button" class="action" :disabled="!hasAudio" title="Stretch amplitude to full scale" @click="normalize">
 					Normalize
 				</button>
@@ -455,6 +489,11 @@ onBeforeUnmount(() => {
 		.actions {
 			display: flex;
 			gap: 8px;
+		}
+
+		.action.play {
+			border-color: var(--accent-border);
+			color: var(--accent);
 		}
 
 		.action {

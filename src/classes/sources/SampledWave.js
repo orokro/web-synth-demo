@@ -203,6 +203,33 @@ export default class SampledWave extends WaveSource {
 
 
 	/**
+	 * Returns the trimmed region at its native sample rate with the output gain
+	 * applied — i.e. the recording as it would sound, for previewing/audition.
+	 *
+	 * @returns {Float32Array}
+	 */
+	renderNatural() {
+
+		const mono = this.mono;
+		if (!mono || mono.length < 2)
+			return new Float32Array(0);
+
+		const s0 = Math.floor(clamp01(Math.min(this.trimStart.value, this.trimEnd.value)) * mono.length);
+		const s1 = Math.floor(clamp01(Math.max(this.trimStart.value, this.trimEnd.value)) * mono.length);
+		if (s1 - s0 < 2)
+			return new Float32Array(0);
+
+		const out = mono.slice(s0, s1);
+		const g = this.gain.value;
+		if (g !== 1)
+			for (let i = 0; i < out.length; i++)
+				out[i] *= g;
+
+		return out;
+	}
+
+
+	/**
 	 * Resamples the trimmed region to n samples (linear interpolation), scaled
 	 * by the output gain.
 	 *
