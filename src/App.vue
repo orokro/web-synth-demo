@@ -185,6 +185,37 @@ onBeforeUnmount(() => {
 		background: #121214;
 	}
 
+	/* sleek, modern scrollbars (replaces the default browser chrome) */
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: #3a3a44 transparent;
+	}
+
+	*::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+
+	*::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	*::-webkit-scrollbar-thumb {
+		background: #3a3a44;
+		border: 2px solid transparent;
+		border-radius: 8px;
+		background-clip: padding-box;
+	}
+
+	*::-webkit-scrollbar-thumb:hover {
+		background: #50505e;
+		background-clip: padding-box;
+	}
+
+	*::-webkit-scrollbar-corner {
+		background: transparent;
+	}
+
 </style>
 <style lang="scss" scoped>
 

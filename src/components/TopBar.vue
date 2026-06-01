@@ -94,11 +94,11 @@ function onImportChange(event) {
 <style lang="scss" scoped>
 
 	.top-bar {
+		position: absolute;
+		inset: 0;
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		width: 100%;
-		height: 100%;
 		padding: 0 10px;
 		color: #ddd;
 		font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
