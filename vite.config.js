@@ -6,6 +6,9 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // relative asset paths so the build works both at a server root and under a
+  // subpath (e.g. GitHub Pages /web-synth-demo/)
+  base: './',
   plugins: [
     vue(),
     vueDevTools(),

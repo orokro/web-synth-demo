@@ -108,6 +108,32 @@ export default class Synth {
 
 
 	/**
+	 * Best-effort silent resume on page load. Browsers require a user gesture to
+	 * start audio, but on repeat visits with prior engagement the context can
+	 * resume on its own; if it does, we finish startup. Returns whether audio is
+	 * now running. Never blocks for more than a moment.
+	 *
+	 * @returns {Promise<Boolean>}
+	 */
+	async tryAutoStart() {
+		if (this.isStarted.value)
+			return true;
+		try {
+			const ctx = Tone.getContext().rawContext;
+			if (ctx.state !== "running")
+				await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 150))]);
+			if (ctx.state === "running") {
+				await this.start();
+				return true;
+			}
+		} catch (err) {
+			// blocked until a user gesture — the gate handles it
+		}
+		return false;
+	}
+
+
+	/**
 	 * Sets the sound source and its current cycle, then rebuilds whatever the
 	 * active mode needs. Called reactively by the App when the source or its
 	 * parameters change.

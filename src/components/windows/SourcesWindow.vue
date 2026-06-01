@@ -4,9 +4,10 @@
 
 	Window listing the project's wave sources, with controls to add (choosing a
 	type), select and remove them, plus a live waveform thumbnail per source. A
-	dot marks the source currently feeding the synth. A small toolbar handles
-	New / Import / Export of the whole session. Reads shared App state so
-	multiple Sources windows stay in sync. Fills its parent frame and scrolls.
+	dot marks the source currently feeding the synth. Double-click a name to
+	rename it inline. Reads shared App state so multiple Sources windows stay in
+	sync. Fills its parent frame and scrolls. (New / Import / Export of the whole
+	session live in the app's top bar.)
 -->
 <script setup>
 
@@ -42,9 +43,6 @@ function typeIcon(type) {
 // add-type menu state + element (for click-outside)
 const showMenu = ref(false);
 const addWrap = ref(null);
-
-// hidden file input for import
-const fileInput = ref(null);
 
 // addable source types
 const ADD_TYPES = [
@@ -165,48 +163,6 @@ function remove(id, event) {
 	app.removeSource(id);
 }
 
-/**
- * Clears the project after confirmation.
- *
- * @returns {void}
- */
-function newProject() {
-	if (typeof window === "undefined" || window.confirm("Start a new project? This clears all current sources."))
-		app.newProject();
-}
-
-/**
- * Downloads the current session as JSON.
- *
- * @returns {void}
- */
-function exportProject() {
-	app.exportProject();
-}
-
-/**
- * Opens the file picker for import.
- *
- * @returns {void}
- */
-function triggerImport() {
-	if (fileInput.value)
-		fileInput.value.click();
-}
-
-/**
- * Imports the chosen JSON file, then resets the input.
- *
- * @param {Event} event - file input change event
- * @returns {void}
- */
-function onImportChange(event) {
-	const file = event.target.files && event.target.files[0];
-	if (file)
-		app.importFromFile(file);
-	event.target.value = "";
-}
-
 onMounted(() => document.addEventListener("click", onDocClick));
 onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 
@@ -223,13 +179,6 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 				</div>
 			</div>
 		</header>
-
-		<div class="toolbar">
-			<button type="button" @click="newProject">New</button>
-			<button type="button" @click="triggerImport">Import</button>
-			<button type="button" @click="exportProject">Export</button>
-			<input ref="fileInput" type="file" accept="application/json" hidden @change="onImportChange" />
-		</div>
 
 		<div class="list">
 			<p v-if="app.sources.value.length === 0" class="empty">No sources yet. Click + to add one.</p>
@@ -345,30 +294,6 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 					background: var(--accent-dim);
 					color: var(--accent);
 				}
-			}
-		}
-	}
-
-	.toolbar {
-		display: flex;
-		gap: 6px;
-		padding: 8px 12px;
-		border-bottom: 1px solid #2c2c32;
-		flex: 0 0 auto;
-
-		button {
-			flex: 1 1 0;
-			padding: 5px 0;
-			font-size: 11px;
-			border: 1px solid #444;
-			border-radius: 4px;
-			background: #2a2a30;
-			color: #ccc;
-			cursor: pointer;
-
-			&:hover {
-				background: #34343c;
-				color: #fff;
 			}
 		}
 	}

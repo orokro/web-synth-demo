@@ -11,8 +11,10 @@
 		- Release: a source curve played once on note-off, ending in silence
 
 	A source's -1..1 curve maps to a 0..1 level via (v+1)/2 (bottom = silent).
-	A stage with no source is a straight linear ramp over its length. The release
-	always starts from the level at the moment the key is let go (no click).
+	A stage with no source is a straight linear ramp over its length. Each stage
+	with a source also has a "Curve" (strength) knob that blends from a straight
+	ramp (0%) to the full curve shape (100%), keeping the endpoints fixed. The
+	release always starts from the level at the moment the key is let go.
 
 	A stitched preview shows the assembled envelope over time.
 -->
@@ -42,14 +44,13 @@ const attack = computed(() => env.attack.value);
 const release = computed(() => env.release.value);
 
 /**
- * Resolves a source's display name from an id.
+ * Percentage label for a 0..1 strength.
  *
- * @param {String|null} id - source id
- * @returns {String}
+ * @param {Number} v - 0..1
+ * @returns {Number}
  */
-function sourceName(id) {
-	const s = app.getSource(id);
-	return s ? s.name.value : "Linear";
+function pct(v) {
+	return Math.round(v * 100);
 }
 
 /**
@@ -88,13 +89,25 @@ function setLength(name, v) {
 	app.requestSave();
 }
 
+/**
+ * Sets a stage's curve strength (0..1).
+ *
+ * @param {String} name - stage name
+ * @param {Number} v - 0..1
+ * @returns {void}
+ */
+function setStrength(name, v) {
+	env.setStage(name, { strength: v });
+	app.requestSave();
+}
+
 // --- preview ----------------------------------------------------------------
 
 const PAD = 8;
 const PREVIEW_RES = 96;
 
 /**
- * Wave x (0..1 of the preview width) -> pixel x.
+ * Preview x (0..1) -> pixel x.
  *
  * @param {Number} x - 0..1
  * @returns {Number}
@@ -114,8 +127,7 @@ function py(y) {
 }
 
 /**
- * Builds the stitched envelope shape (attack | flat sustain | release) as
- * { points: "x,y ...", segs: {...} } in pixel space.
+ * Builds the stitched envelope shape (attack | flat sustain | release).
  *
  * @returns {{points:String, splitA:Number, splitB:Number}}
  */
@@ -134,7 +146,6 @@ const preview = computed(() => {
 
 	const pts = [];
 
-	// attack: source curve, or linear 0 -> hold
 	if (aLen > 0) {
 		for (let i = 0; i <= PREVIEW_RES; i++) {
 			const f = i / PREVIEW_RES;
@@ -146,12 +157,10 @@ const preview = computed(() => {
 		pts.push([0, hold]);
 	}
 
-	// sustain: flat hold
 	const sStart = aLen;
 	pts.push([sStart / total, hold]);
 	pts.push([(sStart + sLen) / total, hold]);
 
-	// release: from hold following the release shape (scaled) to 0, or linear
 	const rStart = sStart + sLen;
 	for (let i = 0; i <= PREVIEW_RES; i++) {
 		const f = i / PREVIEW_RES;
@@ -209,7 +218,6 @@ onBeforeUnmount(() => {
 				<line x1="0" :y1="py(0)" :x2="vw" :y2="py(0)" class="axis" />
 				<line x1="0" :y1="py(1)" :x2="vw" :y2="py(1)" class="axis faint" />
 
-				<!-- stage dividers -->
 				<line :x1="preview.splitA" y1="0" :x2="preview.splitA" :y2="vh" class="divider" />
 				<line :x1="preview.splitB" y1="0" :x2="preview.splitB" :y2="vh" class="divider" />
 
@@ -230,9 +238,17 @@ onBeforeUnmount(() => {
 					<option value="">Linear</option>
 					<option v-for="s in sources" :key="s.id" :value="s.id">{{ s.name.value }}</option>
 				</select>
-				<div class="len">
-					<Knob :model-value="attack.length" :min="0.005" :max="4" :curve="3" @update:model-value="setLength('attack', $event)" />
-					<span class="lval">{{ attack.length.toFixed(3) }}s</span>
+				<div class="knobs">
+					<div v-if="attack.sourceId" class="knob-cell">
+						<span class="klabel">Curve</span>
+						<Knob :model-value="attack.strength" :min="0" :max="1" :curve="1" @update:model-value="setStrength('attack', $event)" />
+						<span class="kval">{{ pct(attack.strength) }}%</span>
+					</div>
+					<div class="knob-cell">
+						<span class="klabel">Len</span>
+						<Knob :model-value="attack.length" :min="0.005" :max="4" :curve="3" @update:model-value="setLength('attack', $event)" />
+						<span class="kval">{{ attack.length.toFixed(3) }}s</span>
+					</div>
 				</div>
 			</div>
 
@@ -248,15 +264,23 @@ onBeforeUnmount(() => {
 					<option value="">Linear</option>
 					<option v-for="s in sources" :key="s.id" :value="s.id">{{ s.name.value }}</option>
 				</select>
-				<div class="len">
-					<Knob :model-value="release.length" :min="0.005" :max="4" :curve="3" @update:model-value="setLength('release', $event)" />
-					<span class="lval">{{ release.length.toFixed(3) }}s</span>
+				<div class="knobs">
+					<div v-if="release.sourceId" class="knob-cell">
+						<span class="klabel">Curve</span>
+						<Knob :model-value="release.strength" :min="0" :max="1" :curve="1" @update:model-value="setStrength('release', $event)" />
+						<span class="kval">{{ pct(release.strength) }}%</span>
+					</div>
+					<div class="knob-cell">
+						<span class="klabel">Len</span>
+						<Knob :model-value="release.length" :min="0.005" :max="4" :curve="3" @update:model-value="setLength('release', $event)" />
+						<span class="kval">{{ release.length.toFixed(3) }}s</span>
+					</div>
 				</div>
 			</div>
 
 		</div>
 
-		<p class="hint">Stages reference your sources (mapped so the bottom of a curve = silent). "Linear" = a straight ramp.</p>
+		<p class="hint">Stages reference your sources (mapped so the bottom of a curve = silent). "Linear" = a straight ramp; Curve blends ramp → full shape.</p>
 
 	</div>
 
@@ -336,8 +360,7 @@ onBeforeUnmount(() => {
 		}
 
 		.src {
-			flex: 1 1 auto;
-			max-width: 220px;
+			flex: 0 1 200px;
 			background: #26262c;
 			color: #ddd;
 			border: 1px solid #444;
@@ -345,18 +368,30 @@ onBeforeUnmount(() => {
 			padding: 4px 6px;
 		}
 
-		.len {
-			flex: 0 0 auto;
+		.knobs {
 			display: flex;
 			align-items: center;
-			gap: 8px;
+			gap: 16px;
 			margin-left: auto;
+		}
 
-			.lval {
+		.knob-cell {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+
+			.klabel {
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				color: #999;
+			}
+
+			.kval {
 				font-size: 12px;
 				color: #ccc;
 				font-variant-numeric: tabular-nums;
-				min-width: 48px;
+				min-width: 46px;
 				text-align: right;
 			}
 		}

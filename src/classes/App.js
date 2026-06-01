@@ -153,6 +153,22 @@ export default class App {
 	async enableAudio() {
 		await this.synth.start();
 		await this.midiInput.requestAccess();
+		this.midiInput.autoSelect();
+	}
+
+
+	/**
+	 * On load, connect MIDI silently if already permitted (pre-selecting the last
+	 * device) and attempt a silent audio resume. Audio still needs a user gesture
+	 * on most loads (browser policy) — the gate covers that.
+	 *
+	 * @returns {Promise<void>}
+	 */
+	async tryAutoEnable() {
+		this.midiInput.autoConnect();
+		const running = await this.synth.tryAutoStart();
+		if (running)
+			this.midiInput.autoSelect();
 	}
 
 

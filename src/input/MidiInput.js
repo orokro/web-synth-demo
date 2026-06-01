@@ -15,6 +15,9 @@
 // vue
 import { ref, shallowRef } from "vue";
 
+// localStorage key for the last-used device id (auto-selected on return visits)
+const LAST_DEVICE_KEY = "web-synth-demo:midi-device";
+
 // main export
 export default class MidiInput {
 
@@ -113,6 +116,9 @@ export default class MidiInput {
 
 		this.selectedId.value = id;
 
+		if (id)
+			this.saveLastId(id);
+
 		if (id === null || id === "" || this.access === null)
 			return;
 
@@ -143,6 +149,79 @@ export default class MidiInput {
 			this.onNoteOn(note, velocity / 127);
 		else if (command === 0x80 || (command === 0x90 && velocity === 0))
 			this.onNoteOff(note);
+	}
+
+
+	/**
+	 * Persists the last chosen device id for auto-selection on the next visit.
+	 *
+	 * @param {String} id - device id
+	 * @returns {void}
+	 */
+	saveLastId(id) {
+		try {
+			localStorage.setItem(LAST_DEVICE_KEY, id);
+		} catch (err) {
+			// storage unavailable — fine
+		}
+	}
+
+
+	/**
+	 * Reads the last chosen device id, if any.
+	 *
+	 * @returns {String|null}
+	 */
+	loadLastId() {
+		try {
+			return localStorage.getItem(LAST_DEVICE_KEY);
+		} catch (err) {
+			return null;
+		}
+	}
+
+
+	/**
+	 * Selects the previously-used device if present, else the only device when
+	 * there's exactly one. No-op if a device is already selected.
+	 *
+	 * @returns {void}
+	 */
+	autoSelect() {
+		if (this.access === null || this.selectedId.value)
+			return;
+		const list = this.devices.value;
+		const last = this.loadLastId();
+		if (last && list.some((d) => d.id === last)) {
+			this.select(last);
+			return;
+		}
+		if (list.length === 1)
+			this.select(list[0].id);
+	}
+
+
+	/**
+	 * If MIDI was already granted on a previous visit, connects silently (no
+	 * prompt) and auto-selects the last device — so a returning user's keyboard is
+	 * ready with no interaction. Safe to call on load; no-op without permission.
+	 *
+	 * @returns {Promise<void>}
+	 */
+	async autoConnect() {
+		if (!this.isSupported.value || this.access !== null)
+			return;
+		try {
+			if (!navigator.permissions || !navigator.permissions.query)
+				return;
+			const status = await navigator.permissions.query({ name: "midi" });
+			if (status.state !== "granted")
+				return;
+		} catch (err) {
+			return;
+		}
+		await this.requestAccess();
+		this.autoSelect();
 	}
 
 

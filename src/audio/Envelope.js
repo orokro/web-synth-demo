@@ -57,6 +57,7 @@ function normStage(s, enabledDefault, lengthDefault) {
 	return {
 		sourceId: s.sourceId ?? null,
 		length: clamp(s.length ?? lengthDefault, MIN_TIME, MAX_TIME),
+		strength: clamp(s.strength ?? 1, 0, 1),
 		enabled: s.enabled ?? enabledDefault
 	};
 }
@@ -127,9 +128,24 @@ export default class Envelope {
 			return null;
 
 		const raw = typeof src.render === "function" ? src.render(n) : src.getCycle();
-		const out = new Float32Array(n);
+		const c = new Float32Array(n);
 		for (let i = 0; i < n; i++) {
 			const v = (raw[i] + 1) / 2;
+			c[i] = v < 0 ? 0 : v > 1 ? 1 : v;
+		}
+
+		// strength blends the curve toward the straight line between its endpoints
+		// (endpoints preserved, so the hold level is unaffected); 0 = linear ramp
+		const strength = clamp(st.strength ?? 1, 0, 1);
+		if (strength >= 0.999 || n < 2)
+			return c;
+
+		const a0 = c[0];
+		const a1 = c[n - 1];
+		const out = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			const line = a0 + (a1 - a0) * (i / (n - 1));
+			const v = line + (c[i] - line) * strength;
 			out[i] = v < 0 ? 0 : v > 1 ? 1 : v;
 		}
 		return out;
