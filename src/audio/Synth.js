@@ -78,6 +78,9 @@ export default class Synth {
 
 		// one-shot preview voice (audition button), independent of played notes
 		this.previewNode = null;
+
+		// amplitude envelope used for new notes (set by the App); null = fixed ADSR
+		this.envelope = null;
 	}
 
 
@@ -213,6 +216,93 @@ export default class Synth {
 
 
 	/**
+	 * Sets the amplitude envelope used for new notes (or null for fixed ADSR).
+	 *
+	 * @param {Object} envelope - an Envelope instance
+	 * @returns {void}
+	 */
+	setEnvelope(envelope) {
+		this.envelope = envelope;
+	}
+
+
+	/**
+	 * Schedules the attack/decay -> sustain portion on a fresh gain param,
+	 * following the envelope's pre-split shape over attackTime. Falls back to the
+	 * fixed ADSR when no envelope is set.
+	 *
+	 * @param {AudioParam} param - the voice gain's .gain
+	 * @param {Number} now - context time to start at
+	 * @param {Number} peak - velocity-scaled peak (0-1)
+	 * @returns {void}
+	 */
+	applyAttack(param, now, peak) {
+
+		const env = this.envelope;
+		if (env) {
+			const { pre } = env.segments();
+			const atk = Math.max(0.005, env.attackTime.value);
+			const curve = new Float32Array(pre.length);
+			for (let i = 0; i < pre.length; i++)
+				curve[i] = Math.max(0, pre[i] * peak);
+			param.setValueCurveAtTime(curve, now, atk);
+			param.setValueAtTime(curve[curve.length - 1], now + atk);
+			return;
+		}
+
+		param.setValueAtTime(0, now);
+		param.linearRampToValueAtTime(peak, now + ENV.attack);
+		param.linearRampToValueAtTime(peak * ENV.sustain, now + ENV.attack + ENV.decay);
+	}
+
+
+	/**
+	 * Schedules the release from the param's current level to silence, following
+	 * the envelope's release shape over releaseTime. Returns the release seconds.
+	 * Falls back to a linear ramp with no envelope or if the curve is rejected.
+	 *
+	 * @param {AudioParam} param - the voice gain's .gain
+	 * @param {Number} now - context time to start at
+	 * @returns {Number} release duration (s)
+	 */
+	applyRelease(param, now) {
+
+		const cur = param.value;
+		const env = this.envelope;
+
+		if (env) {
+			const relTime = Math.max(0.005, env.releaseTime.value);
+			try {
+				const { rel } = env.segments();
+				const sl = env.sustainLevel();
+				const scale = sl > 1e-4 ? cur / sl : 0;
+				const curve = new Float32Array(rel.length);
+				for (let i = 0; i < rel.length; i++)
+					curve[i] = Math.max(0, rel[i] * scale);
+				curve[0] = Math.max(0, cur);
+				curve[curve.length - 1] = 0;
+				if (param.cancelAndHoldAtTime)
+					param.cancelAndHoldAtTime(now);
+				else
+					param.cancelScheduledValues(now);
+				param.setValueCurveAtTime(curve, now, relTime);
+				return relTime;
+			} catch (err) {
+				param.cancelScheduledValues(now);
+				param.setValueAtTime(cur, now);
+				param.linearRampToValueAtTime(0, now + relTime);
+				return relTime;
+			}
+		}
+
+		param.cancelScheduledValues(now);
+		param.setValueAtTime(cur, now);
+		param.linearRampToValueAtTime(0, now + ENV.release);
+		return ENV.release;
+	}
+
+
+	/**
 	 * Begins a note in the active engine (attack -> decay -> hold at sustain).
 	 *
 	 * @param {Number} midiNote - midi note number (0-127)
@@ -250,9 +340,7 @@ export default class Synth {
 		}
 
 		const peak = Math.max(0.0001, velocity);
-		gain.gain.setValueAtTime(0, now);
-		gain.gain.linearRampToValueAtTime(peak, now + ENV.attack);
-		gain.gain.linearRampToValueAtTime(peak * ENV.sustain, now + ENV.attack + ENV.decay);
+		this.applyAttack(gain.gain, now, peak);
 
 		node.connect(gain);
 		gain.connect(this.master);
@@ -315,14 +403,10 @@ export default class Synth {
 			return;
 
 		const now = this.ctx.currentTime;
-		const g = voice.gain.gain;
-
-		g.cancelScheduledValues(now);
-		g.setValueAtTime(g.value, now);
-		g.linearRampToValueAtTime(0, now + ENV.release);
+		const releaseTime = this.applyRelease(voice.gain.gain, now);
 
 		try {
-			voice.node.stop(now + ENV.release + 0.02);
+			voice.node.stop(now + releaseTime + 0.02);
 		} catch (err) {
 			// already stopped (e.g. a one-shot that finished) — fine
 		}

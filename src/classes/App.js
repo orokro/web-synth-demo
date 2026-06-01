@@ -26,6 +26,7 @@ import { watch, watchEffect } from "vue";
 
 // audio + input
 import Synth from "@/audio/Synth.js";
+import Envelope from "@/audio/Envelope.js";
 import MidiInput from "@/input/MidiInput.js";
 import ComputerKeyboard from "@/input/ComputerKeyboard.js";
 
@@ -52,6 +53,10 @@ export default class App {
 
 		// audio output
 		this.synth = new Synth();
+
+		// synth-wide amplitude envelope; loadSession() may repopulate it in place
+		this.envelope = new Envelope();
+		this.synth.setEnvelope(this.envelope);
 
 		// hardware + on-screen input, both routed to noteOn / noteOff
 		this.midiInput = new MidiInput({
@@ -353,7 +358,8 @@ export default class App {
 		return {
 			mode: this.synth.mode.value,
 			baseLength: this.synth.baseLength.value,
-			loop: this.synth.loop.value
+			loop: this.synth.loop.value,
+			envelope: this.envelope.toJSON()
 		};
 	}
 
@@ -453,6 +459,8 @@ export default class App {
 				this.synth.baseLength.value = data.synth.baseLength;
 			if (typeof data.synth.loop === "boolean")
 				this.synth.loop.value = data.synth.loop;
+			if (data.synth.envelope)
+				this.envelope.loadJSON(data.synth.envelope);
 		}
 		this.pendingLayout = data.layout || null;
 		this.pendingEditorPins = Array.isArray(data.editorPins) ? data.editorPins.slice() : [];

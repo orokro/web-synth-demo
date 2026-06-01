@@ -5,7 +5,7 @@
 	Synth settings (the play surface is the Instrument window). Hosts the
 	enable-audio gate, the sound-source picker (which wave feeds the synth), the
 	playback engine (Oscillator vs Sampler + base length / loop), and the
-	envelope placeholder. Editing the chosen source updates the sound live in
+	amplitude-envelope editor. Editing the chosen source updates the sound live in
 	Oscillator mode; in Sampler mode edits apply to the next note.
 -->
 <script setup>
@@ -15,6 +15,7 @@ import { inject, computed } from "vue";
 
 // components
 import WavePreview from "@/components/WavePreview.vue";
+import EnvelopeEditor from "@/components/EnvelopeEditor.vue";
 
 // shared app state
 const app = inject("app");
@@ -114,11 +115,11 @@ function onLoop(event) {
 				</template>
 				<p v-else class="sampler-note">Repeats one cycle at the note pitch; edits update held notes live.</p>
 			</div>
+		</div>
 
-			<div class="field">
-				<span class="field-label">Envelope</span>
-				<div class="field-body">Default ADSR — custom envelope in Phase 7</div>
-			</div>
+		<div class="envelope-section">
+			<span class="field-label">Envelope</span>
+			<EnvelopeEditor />
 		</div>
 
 	</div>
@@ -168,15 +169,6 @@ function onLoop(event) {
 			padding: 10px;
 		}
 
-		.field-label {
-			display: block;
-			font-size: 11px;
-			text-transform: uppercase;
-			letter-spacing: 0.08em;
-			color: #888;
-			margin-bottom: 6px;
-		}
-
 		select {
 			width: 100%;
 			background: #26262c;
@@ -199,6 +191,23 @@ function onLoop(event) {
 		}
 
 		.field-body { font-size: 13px; color: #bbb; }
+	}
+
+	.field-label {
+		display: block;
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: #888;
+		margin-bottom: 6px;
+	}
+
+	.envelope-section {
+		flex: 0 0 auto;
+		background: #1e1e22;
+		border: 1px solid #2c2c32;
+		border-radius: 6px;
+		padding: 10px;
 	}
 
 	.engine-toggle {
