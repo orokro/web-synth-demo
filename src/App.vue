@@ -138,6 +138,11 @@ onBeforeUnmount(() => {
 			:showTopBar="true"
 			:showStatusBar="false"
 			:splitMergeHandles="true"
+			:keepEmptyFrames="true"
+			:showMergeButtons="true"
+			:mwiTaskBar="true"
+			:mwiStartMenu="true"
+			splitFillMode="clone"
 			:theme="{
 				frameTabsActiveColor: 'rgb(105,105,105)',
 				topBarBGColor: '#101013'

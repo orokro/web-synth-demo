@@ -18,7 +18,7 @@
 <script setup>
 
 // vue
-import { inject, computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { inject, computed, ref, watch } from "vue";
 
 // components
 import WavePreview from "@/components/WavePreview.vue";
@@ -31,16 +31,13 @@ import SampledEditor from "@/components/SampledEditor.vue";
 // generated waveform names
 import { WAVEFORMS } from "@/classes/sources/GeneratedWave.js";
 
-// process-wide unique id per editor window instance (for the App pin registry)
-let editorUidCounter = 0;
+// per-window state serialization — the pin rides inside the saved layout, so it
+// recovers reliably without any DOM-center heuristics
+import { onSerialize, onLayoutLoad } from "vue-win-mgr";
 
 // shared app state + per-window context (for the tab title)
 const app = inject("app");
 const windowCtx = inject("windowCtx", null);
-
-// unique id for this instance and a ref to our root element (for its center)
-const uid = ++editorUidCounter;
-const rootEl = ref(null);
 
 // pin state is local to this window instance
 const pinned = ref(false);
@@ -52,50 +49,6 @@ const boundSource = computed(() => app.getSource(boundId.value));
 
 // whether the bound source is the one feeding the synth
 const isSoundSource = computed(() => boundId.value !== null && boundId.value === app.soundSourceId.value);
-
-/**
- * This window's center as a fraction of the viewport, read from its own DOM
- * element so it stays correct even if frameCtx is stale.
- *
- * @returns {{ cx:Number, cy:Number }}
- */
-function centerNorm() {
-	const el = rootEl.value;
-	if (!el || typeof window === "undefined")
-		return { cx: 0.5, cy: 0.5 };
-	const r = el.getBoundingClientRect();
-	return {
-		cx: (r.left + r.width / 2) / window.innerWidth,
-		cy: (r.top + r.height / 2) / window.innerHeight
-	};
-}
-
-/**
- * Reports this editor's current center and pin for serialization.
- *
- * @returns {{ cx:Number, cy:Number, pinnedId:(String|null) }}
- */
-function report() {
-	const c = centerNorm();
-	return { cx: c.cx, cy: c.cy, pinnedId: pinned.value ? pinnedId.value : null };
-}
-
-/**
- * Claims a saved pin whose center best matches this editor (called once after
- * a restore, when layout has settled). No-op if already pinned.
- *
- * @returns {void}
- */
-function claim() {
-	if (pinned.value)
-		return;
-	const c = centerNorm();
-	const id = app.claimEditorPin(c.cx, c.cy);
-	if (id && app.getSource(id)) {
-		pinnedId.value = id;
-		pinned.value = true;
-	}
-}
 
 /**
  * Toggles the pin between "follow selection" and "locked to this source".
@@ -161,13 +114,20 @@ watch(() => app.sources.value, (list) => {
 	}
 });
 
-onMounted(() => app.registerEditor(uid, { report, claim }));
-onBeforeUnmount(() => app.unregisterEditor(uid));
+// persist this editor's pin with the layout, and restore it when a saved layout
+// is loaded (fires on mount with any pending restore data)
+onSerialize(() => ({ pinnedId: pinned.value ? pinnedId.value : null }));
+onLayoutLoad((saved) => {
+	if (saved && saved.pinnedId && app.getSource(saved.pinnedId)) {
+		pinnedId.value = saved.pinnedId;
+		pinned.value = true;
+	}
+});
 
 </script>
 <template>
 
-	<div ref="rootEl" class="editor-window">
+	<div class="editor-window">
 
 		<header class="bar">
 			<span class="title">{{ boundSource ? boundSource.name.value : "No source" }}</span>
