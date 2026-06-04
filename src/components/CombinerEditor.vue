@@ -278,8 +278,6 @@ function resetDrag() {
 		display: flex;
 		flex-direction: column;
 		gap: 10px;
-		flex: 1 1 auto;
-		min-height: 0;
 	}
 
 	.toolbar {
@@ -313,7 +311,6 @@ function resetDrag() {
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
-		overflow-y: auto;
 	}
 
 	.empty { font-size: 12px; color: #777; margin: 4px 0; }
